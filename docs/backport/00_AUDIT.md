@@ -2,7 +2,7 @@
 
 ## Статус
 
-**PARTIAL**. Source commit и рабочее окружение установлены. Rust baseline запущен на точном checkout; клиент проходит, protocol и world имеют наблюдаемые тестовые сбои. `pr_ready.py` ещё выполняется, поэтому этап нельзя считать завершённым.
+**PARTIAL**. Source commit и рабочее окружение установлены. Rust baseline запущен на точном checkout; клиент проходит, protocol и world имеют наблюдаемые тестовые сбои. Предварительные проверки `pr_ready.py` прошли, но Python suite не завершилась за ~12 минут и была прервана, поэтому этап нельзя считать завершённым.
 
 ## Исходная точка
 
@@ -29,7 +29,7 @@
 
 ## Baseline
 
-Подробные команды, фактические результаты и ограничения находятся в `TEST_MATRIX.md`. Кратко: client PASS; core PASS; world имеет 3 Windows `PermissionDenied` failures; protocol test process завершается `STATUS_STACK_OVERFLOW`; `pr_ready.py` ещё в процессе Python tests.
+Подробные команды, фактические результаты и ограничения находятся в `TEST_MATRIX.md`. Кратко: client PASS; core PASS; world имеет 3 Windows `PermissionDenied` failures; protocol test process завершается `STATUS_STACK_OVERFLOW`; `pr_ready.py` прошёл предварительные gates, затем был остановлен на долгом Python suite без итоговой сводки.
 
 ## Завершение этапа
 
