@@ -42,6 +42,24 @@ class ArtifactTests(unittest.TestCase):
         self.assertFalse(lab.mapping_pins_match({"minecraft": {}}, {"downloads": {"client_mappings": {}}}))
         self.assertTrue(lab.mapping_pins_match({"minecraft": {}}, {"downloads": {}}))
 
+    def test_mapping_downloads_are_verified_and_reused(self):
+        content = {"client": b"client mapping", "server": b"server mapping"}
+        manifest = {"downloads": {f"{side}_mappings": {
+            "sha1": hashlib.sha1(data).hexdigest(), "url": f"https://example.invalid/{side}.txt"}
+            for side, data in content.items()}}
+        lock = {"minecraft": {f"{side}_mappings_sha1": manifest["downloads"][f"{side}_mappings"]["sha1"]
+                              for side in content}}
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch("urllib.request.urlopen", side_effect=[io.BytesIO(data) for data in content.values()]):
+                paths = lab.download_mappings(manifest, Path(temp), lock)
+            self.assertEqual({side: path.read_bytes() for side, path in paths.items()}, content)
+            with mock.patch("urllib.request.urlopen") as request:
+                self.assertEqual(lab.download_mappings(manifest, Path(temp), lock), paths)
+                request.assert_not_called()
+            wrong = {"minecraft": {**lock["minecraft"], "server_mappings_sha1": "0" * 40}}
+            with self.assertRaisesRegex(ValueError, "do not match lock"):
+                lab.download_mappings(manifest, Path(temp), wrong)
+
     def test_download_rejects_corruption_without_overwriting_existing_file(self):
         with tempfile.TemporaryDirectory() as temp:
             destination = Path(temp) / "game.jar"
