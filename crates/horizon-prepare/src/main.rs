@@ -16,7 +16,8 @@ const HELP: &str = "\
 horizon-prepare: prepare Horizon's resources from your own Minecraft Java Edition
 
 Usage: horizon-prepare [--prepare] [--server-jar PATH] [--minecraft-dir PATH] [--prism-dir PATH] [--root PATH] [--output PATH]
-                       [--version-json PATH] [--client-jar PATH] [--libraries-dir PATH] [--assets-dir PATH]
+                       [--version-json PATH] [--client-jar PATH] [--client-mappings PATH] [--server-mappings PATH] [--remapper-jar PATH]
+                       [--libraries-dir PATH] [--assets-dir PATH]
                        [--java-home PATH] [--complete] [--progress json]
        horizon-prepare --check [--root PATH] [--output PATH]
        horizon-prepare --launch-api [--root PATH]
@@ -37,6 +38,9 @@ Usage: horizon-prepare [--prepare] [--server-jar PATH] [--minecraft-dir PATH] [-
                         server jar is downloaded: its client jar stands in for the server side
   --version-json PATH   The pinned version's JSON, where --minecraft-dir has none
   --client-jar PATH     The pinned client jar, where --minecraft-dir has none
+  --client-mappings PATH  The pinned client mappings for an obfuscated release
+  --server-mappings PATH  The pinned server mappings for an obfuscated release
+  --remapper-jar PATH   The pinned AutoRenamingTool JAR for an obfuscated release
   --libraries-dir PATH  The folder of the client's libraries (Maven layout)
   --assets-dir PATH     The asset store, with indexes/ and objects/
                         (each of these four replaces what --minecraft-dir would give; an earlier
@@ -146,6 +150,15 @@ fn main() -> ExitCode {
                 value("--version-json").map(|v| options.inputs.version_json = Some(v))
             }
             "--client-jar" => value("--client-jar").map(|v| options.inputs.client_jar = Some(v)),
+            "--client-mappings" => {
+                value("--client-mappings").map(|v| options.inputs.client_mappings = Some(v))
+            }
+            "--server-mappings" => {
+                value("--server-mappings").map(|v| options.inputs.server_mappings = Some(v))
+            }
+            "--remapper-jar" => {
+                value("--remapper-jar").map(|v| options.inputs.remapper_jar = Some(v))
+            }
             "--libraries-dir" => {
                 value("--libraries-dir").map(|v| options.inputs.libraries_dir = Some(v))
             }

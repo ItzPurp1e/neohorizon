@@ -81,6 +81,29 @@ impl Lock {
             || self.listed("accepted_manifest_sha1", checksum)
     }
 
+    fn mapping_pins_match(&self, manifest: &Value) -> bool {
+        let downloads = manifest.get("downloads");
+        let sides = ["client", "server"];
+        let pinned = |side: &str| self.pin(&format!("{side}_mappings_sha1")).ok();
+        let mapped = |side: &str| {
+            downloads
+                .and_then(|d| d.get(&format!("{side}_mappings")))
+                .and_then(|entry| entry.get("sha1"))
+                .and_then(Value::as_str)
+        };
+        if !sides.iter().any(|side| {
+            pinned(side).is_some()
+                || downloads
+                    .and_then(|d| d.get(&format!("{side}_mappings")))
+                    .is_some()
+        }) {
+            return true;
+        }
+        sides
+            .iter()
+            .all(|side| pinned(side).is_some_and(|sha1| mapped(side) == Some(sha1)))
+    }
+
     /// The asset indexes of those republished version JSONs: a launcher keeps one
     /// `indexes/<id>.json`, the last it downloaded, whichever version JSON it reads.
     pub(crate) fn asset_index_accepted(&self, checksum: &str) -> bool {
@@ -168,6 +191,9 @@ pub struct PrismFiles {
 pub struct Inputs {
     pub version_json: Option<PathBuf>,
     pub client_jar: Option<PathBuf>,
+    pub client_mappings: Option<PathBuf>,
+    pub server_mappings: Option<PathBuf>,
+    pub remapper_jar: Option<PathBuf>,
     pub libraries_dir: Option<PathBuf>,
     pub assets_dir: Option<PathBuf>,
     pub prism_dir: Option<PathBuf>,
@@ -575,6 +601,7 @@ fn manifest_pins_match(lock: &Lock, manifest: &Value) -> bool {
     manifest.get("id").and_then(Value::as_str) == Some(lock.version.as_str())
         && download("client") == lock.pin("client_sha1").ok()
         && download("server") == lock.pin("server_sha1").ok()
+        && lock.mapping_pins_match(manifest)
         && manifest
             .get("javaVersion")
             .and_then(|java| java.get("majorVersion"))
@@ -756,6 +783,7 @@ pub(crate) fn import_manifest(lock: &Lock, files: &GameFiles) -> Result<Value, S
         if manifest.get("id").and_then(Value::as_str) != Some(version)
             || sha1("client") != Some(lock.pin("client_sha1")?)
             || sha1("server") != Some(lock.pin("server_sha1")?)
+            || !lock.mapping_pins_match(&manifest)
         {
             return Err(format!(
                 "{} does not describe the pinned {version} release",
@@ -797,6 +825,9 @@ pub(crate) fn import_manifest(lock: &Lock, files: &GameFiles) -> Result<Value, S
         .and_then(Value::as_i64);
     if java != Some(lock.java_major) {
         return Err("Manifest Java version does not match lock file".into());
+    }
+    if !lock.mapping_pins_match(&manifest) {
+        return Err("Manifest mappings do not match lock file".into());
     }
     Ok(manifest)
 }
@@ -1122,6 +1153,7 @@ pub fn import(
     minecraft: Option<&Path>,
     inputs: &Inputs,
     server_jar: Option<&Path>,
+    java: &Path,
     log: Log,
 ) -> Result<(), String> {
     let files = game_files(minecraft, &lock.version).with(inputs, &lock.version);
@@ -1134,13 +1166,26 @@ pub fn import(
         &files.hint(&lock.version),
     )?;
     let downloads = manifest.get("downloads");
-    if downloads.and_then(|d| d.get("client_mappings")).is_some()
-        || downloads.and_then(|d| d.get("server_mappings")).is_some()
-    {
-        return Err(
-            "This workflow targets unobfuscated releases. Older releases need a remapping stage."
-                .into(),
-        );
+    let legacy = downloads.and_then(|d| d.get("client_mappings")).is_some()
+        || downloads.and_then(|d| d.get("server_mappings")).is_some();
+    if legacy {
+        for (side, chosen) in [
+            ("client", &inputs.client_mappings),
+            ("server", &inputs.server_mappings),
+        ] {
+            let destination = lock.directory.join(format!("mappings/{side}.txt"));
+            let source = chosen
+                .as_deref()
+                .map(expand_user)
+                .unwrap_or_else(|| destination.clone());
+            import_copy(
+                &source,
+                &destination,
+                lock.pin(&format!("{side}_mappings_sha1"))?,
+                "sha1",
+                &format!("Pass --{side}-mappings PATH with the official {side} mappings"),
+            )?;
+        }
     }
     let id = manifest
         .get("id")
@@ -1184,6 +1229,59 @@ pub fn import(
                 (client.clone(), client_libraries.clone(), true)
             }
         };
+    let (client, server) = if legacy {
+        let tool = lock
+            .json
+            .get("remapper")
+            .ok_or("research-lock.json has no remapper")?;
+        let name = tool
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or("remapper has no name")?;
+        let version = tool
+            .get("version")
+            .and_then(Value::as_str)
+            .ok_or("remapper has no version")?;
+        let sha256 = tool
+            .get("sha256")
+            .and_then(Value::as_str)
+            .ok_or("remapper has no sha256")?;
+        let destination = lock
+            .directory
+            .join(format!("tools/{name}-{version}-all.jar"));
+        let source = inputs
+            .remapper_jar
+            .as_deref()
+            .map(expand_user)
+            .unwrap_or_else(|| destination.clone());
+        let remapper = import_copy(
+            &source,
+            &destination,
+            sha256,
+            "sha256",
+            "Pass --remapper-jar PATH",
+        )?;
+        (
+            remap_jar(
+                java,
+                &remapper,
+                &client,
+                &lock.directory.join("mappings/client.txt"),
+                &lock.directory.join("jars/client-remapped.jar"),
+                &client_libraries,
+            )?,
+            remap_jar(
+                java,
+                &remapper,
+                &server,
+                &lock.directory.join("mappings/server.txt"),
+                &lock.directory.join("jars/server-remapped.jar"),
+                &server_libraries,
+            )?,
+        )
+    } else {
+        (client, server)
+    };
     write_import_metadata(
         root,
         lock,
@@ -1195,6 +1293,81 @@ pub fn import(
         server_from_client,
         log,
     )
+}
+
+fn remap_jar(
+    java: &Path,
+    remapper: &Path,
+    source: &Path,
+    mappings: &Path,
+    destination: &Path,
+    libraries: &[PathBuf],
+) -> Result<PathBuf, String> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", destination.display()))?;
+    fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    let temporary = parent.join(format!(
+        ".{}.{}.tmp",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("remapped.jar"),
+        std::process::id()
+    ));
+    if temporary.exists() {
+        fs::remove_file(&temporary).map_err(|e| format!("{}: {e}", temporary.display()))?;
+    }
+    let mut command = crate::java::command(java);
+    command
+        .arg("-jar")
+        .arg(remapper)
+        .arg("--input")
+        .arg(source)
+        .arg("--output")
+        .arg(&temporary)
+        .arg("--map")
+        .arg(mappings)
+        .arg("--reverse")
+        .arg("--strip-sigs");
+    for library in libraries {
+        command.arg("--lib").arg(library);
+    }
+    let output = command
+        .output()
+        .map_err(|e| format!("Could not run {}: {e}", remapper.display()))?;
+    if !output.status.success() {
+        let _ = fs::remove_file(&temporary);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(format!(
+            "Remapping {} failed ({}): {}{}",
+            source.display(),
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+    if !temporary.is_file() {
+        return Err(format!("The remapper produced no {}", temporary.display()));
+    }
+    let generated = digest(&temporary, "sha256")?;
+    if destination.is_file() {
+        let existing = digest(destination, "sha256")?;
+        fs::remove_file(&temporary).map_err(|e| format!("{}: {e}", temporary.display()))?;
+        if existing != generated {
+            return Err(format!(
+                "Remapping {} was not deterministic: cached {existing}, generated {generated}",
+                source.display()
+            ));
+        }
+        return Ok(destination.to_path_buf());
+    }
+    fs::rename(&temporary, destination).map_err(|e| {
+        let _ = fs::remove_file(&temporary);
+        format!("{}: {e}", destination.display())
+    })?;
+    Ok(destination.to_path_buf())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1253,6 +1426,13 @@ fn write_import_metadata(
                 Value::Object(vec![
                     ("client".into(), Value::Str(relative_display(client, root)?)),
                     ("server".into(), Value::Str(relative_display(server, root)?)),
+                ]),
+            ),
+            (
+                "remapped_sha256".into(),
+                Value::Object(vec![
+                    ("client".into(), Value::str(&digest(client, "sha256")?)),
+                    ("server".into(), Value::str(&digest(server, "sha256")?)),
                 ]),
             ),
             (
@@ -1431,6 +1611,7 @@ pub fn verify(lock: &Lock) -> Result<Artifacts, String> {
         // superset of the bundled server's), and the client libraries are its classpath.
         jars.insert("server", client);
         let libraries = client_libraries(lock, &manifest)?;
+        use_verified_remaps(lock, &manifest, prepared.as_ref(), &mut jars)?;
         return Ok(Artifacts {
             manifest,
             jars,
@@ -1469,6 +1650,7 @@ pub fn verify(lock: &Lock) -> Result<Artifacts, String> {
         }
         Ok(library)
     })?;
+    use_verified_remaps(lock, &manifest, prepared.as_ref(), &mut jars)?;
     Ok(Artifacts {
         manifest,
         jars,
@@ -1476,6 +1658,48 @@ pub fn verify(lock: &Lock) -> Result<Artifacts, String> {
         manifest_from_prism,
         server_from_client,
     })
+}
+
+fn use_verified_remaps(
+    lock: &Lock,
+    manifest: &Value,
+    prepared: Option<&Value>,
+    jars: &mut HashMap<&'static str, PathBuf>,
+) -> Result<(), String> {
+    let downloads = manifest.get("downloads");
+    let legacy = downloads.and_then(|d| d.get("client_mappings")).is_some()
+        || downloads.and_then(|d| d.get("server_mappings")).is_some();
+    if !legacy {
+        return Ok(());
+    }
+    if !lock.mapping_pins_match(manifest) {
+        return Err("Mapping checksums differ from the lock".into());
+    }
+    let hashes = prepared
+        .and_then(|p| p.get("remapped_sha256"))
+        .ok_or("prepared.json has no remapped JAR checksums; prepare again with --prepare")?;
+    for side in ["client", "server"] {
+        let mapping = lock.directory.join(format!("mappings/{side}.txt"));
+        if !mapping.is_file()
+            || digest(&mapping, "sha1")? != lock.pin(&format!("{side}_mappings_sha1"))?
+        {
+            return Err(format!(
+                "{side} mappings checksum changed; prepare again with --prepare"
+            ));
+        }
+        let expected = hashes
+            .get(side)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("prepared.json has no {side} remapped JAR checksum"))?;
+        let jar = lock.directory.join(format!("jars/{side}-remapped.jar"));
+        if !jar.is_file() || digest(&jar, "sha256")? != expected {
+            return Err(format!(
+                "{side} remapped artifact checksum changed; prepare again with --prepare"
+            ));
+        }
+        jars.insert(side, jar);
+    }
+    Ok(())
 }
 
 /// The client libraries, checked against the version JSON (tools/test_model_baking_parity.py's
@@ -1943,6 +2167,7 @@ mod tests {
                 Some(&prism),
                 &Inputs::default(),
                 Some(&server),
+                Path::new("java"),
                 &|_| {},
             )
         };
@@ -2069,7 +2294,16 @@ mod tests {
             prism.join("libraries/com/mojang/minecraft/9.9/minecraft-9.9-client.jar")
         );
 
-        import(&fixture.target, &lock, None, &inputs, None, &|_| {}).unwrap();
+        import(
+            &fixture.target,
+            &lock,
+            None,
+            &inputs,
+            None,
+            Path::new("java"),
+            &|_| {},
+        )
+        .unwrap();
         let found = verify(&lock).unwrap();
         assert!(found.manifest_from_prism);
         assert!(found.server_from_client);
@@ -2162,6 +2396,7 @@ mod tests {
                 Some(dir),
                 &Inputs::default(),
                 Some(&server),
+                Path::new("java"),
                 &|_| {},
             )
         };
@@ -2239,6 +2474,7 @@ mod tests {
                 Some(&empty),
                 inputs,
                 Some(&server),
+                Path::new("java"),
                 &|_| {},
             )
         };
@@ -2275,6 +2511,7 @@ mod tests {
             Some(&empty),
             &Inputs::default(),
             None,
+            Path::new("java"),
             &|_| {},
         )
         .unwrap_err();

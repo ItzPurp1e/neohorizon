@@ -297,6 +297,70 @@ def manifest_accepted(lock, checksum):
     return checksum == game["manifest_sha1"] or checksum in game.get("accepted_manifest_sha1", [])
 
 
+def mapping_pins_match(lock, manifest):
+    """An obfuscated release must pin both official mapping files in the version lock."""
+    game = lock["minecraft"]
+    downloads = manifest.get("downloads", {})
+    sides = ("client", "server")
+    if not any(f"{side}_mappings" in downloads or f"{side}_mappings_sha1" in game for side in sides):
+        return True
+    return all(downloads.get(f"{side}_mappings", {}).get("sha1") == game.get(f"{side}_mappings_sha1")
+               and game.get(f"{side}_mappings_sha1") is not None for side in sides)
+
+
+def download_mappings(manifest, directory, lock=None):
+    """Cache both official mapping files, checking their SHA-1 before use."""
+    downloads = manifest.get("downloads", {})
+    sides = ("client", "server")
+    if not any(f"{side}_mappings" in downloads for side in sides):
+        return {}
+    if lock is not None and not mapping_pins_match(lock, manifest):
+        raise ValueError("Manifest mappings do not match lock file")
+    if not all(f"{side}_mappings" in downloads for side in sides):
+        raise ValueError("The version JSON must contain both client and server mappings")
+    paths = {}
+    for side in sides:
+        entry = downloads[f"{side}_mappings"]
+        checksum, url = entry.get("sha1"), entry.get("url")
+        if not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-f]{40}", checksum):
+            raise ValueError(f"Invalid {side} mappings SHA-1")
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise ValueError(f"Invalid {side} mappings URL")
+        paths[side] = download(url, directory / "mappings" / f"{side}.txt", checksum)
+    return paths
+
+
+def remapper(lock):
+    """The pinned, shaded ART jar; it stays in .local and is never committed."""
+    tool = lock["remapper"]
+    name = f"{tool['name']}-{tool['version']}-all.jar"
+    return download(tool["url"], LOCAL / "tools" / name, tool["sha256"], "sha256")
+
+
+def remap_jar(java, tool, source, mappings, destination, libraries=()):
+    """Remap obfuscated bytecode to official names, and require byte-identical reruns."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=".jar", dir=destination.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+    temporary.unlink()
+    command = [str(java), "-jar", str(tool), "--input", str(source), "--output", str(temporary),
+               "--map", str(mappings), "--reverse", "--strip-sigs"]
+    for library in libraries:
+        command.extend(["--lib", str(library)])
+    try:
+        subprocess.run(command, check=True)
+        if not temporary.is_file():
+            raise ValueError("Remapper did not create its output JAR")
+        output_sha256 = digest(temporary, "sha256")
+        if destination.exists() and digest(destination, "sha256") != output_sha256:
+            raise ValueError(f"Remapped output is not deterministic: {destination}")
+        if not destination.exists():
+            temporary.replace(destination)
+        return destination, output_sha256
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def import_manifest(lock, directory, minecraft=None):
     """The pinned version JSON, from the launcher's versions/ directory.
 
@@ -311,7 +375,8 @@ def import_manifest(lock, directory, minecraft=None):
         downloads = manifest.get("downloads", {})
         if (manifest.get("id") != version
                 or downloads.get("client", {}).get("sha1") != game["client_sha1"]
-                or downloads.get("server", {}).get("sha1") != game["server_sha1"]):
+                or downloads.get("server", {}).get("sha1") != game["server_sha1"]
+                or not mapping_pins_match(lock, manifest)):
             raise ValueError(f"{source} does not describe the pinned {version} release")
         checksum = digest(source, "sha1")
         if not manifest_accepted(lock, checksum):
@@ -325,6 +390,8 @@ def import_manifest(lock, directory, minecraft=None):
     manifest = json.loads(destination.read_text(encoding="utf-8"))
     if manifest["javaVersion"]["majorVersion"] != game["java_major"]:
         raise ValueError("Manifest Java version does not match lock file")
+    if not mapping_pins_match(lock, manifest):
+        raise ValueError("Manifest mappings do not match lock file")
     return manifest
 
 
@@ -571,16 +638,28 @@ def inventory(jar):
             "packages": dict(packages.most_common()), "classes": classes}
 
 
-def prepare(minecraft=None, server_jar=None):
+def prepare(minecraft=None, server_jar=None, java="java"):
     lock, directory = config()
     manifest, client = import_client(lock, directory, minecraft)
-    if "client_mappings" in manifest["downloads"] or "server_mappings" in manifest["downloads"]:
-        raise ValueError("This workflow targets unobfuscated releases. Older releases need a remapping stage.")
+    legacy = "client_mappings" in manifest["downloads"] or "server_mappings" in manifest["downloads"]
+    mappings = download_mappings(manifest, directory, lock) if legacy else {}
     print(f"Imported client {manifest['id']} from {minecraft_dir(minecraft)}", flush=True)
     jars = {"client": client, "server": import_server(lock, directory, server_jar)}
     jars["server"], server_libraries = unpack_server(jars["server"], directory, manifest["id"])
     client_libraries = [import_library(artifact, directory / "libraries" / "client", minecraft)
                         for artifact in client_library_artifacts(manifest)]
+    remapped_sha256 = {}
+    if legacy:
+        java_path = shutil.which(java)
+        if not java_path:
+            raise ValueError(f"Java not found: {java}")
+        tool = remapper(lock)
+        original = jars
+        jars = {}
+        for side, source in original.items():
+            libraries = client_libraries if side == "client" else server_libraries
+            jars[side], remapped_sha256[side] = remap_jar(
+                java_path, tool, source, mappings[side], directory / "jars" / f"{side}-remapped.jar", libraries)
     vf = lock["vineflower"]
     download(vf["url"], LOCAL / "tools" / f"vineflower-{vf['version']}.jar", vf["sha256"], "sha256")
     for side, jar in jars.items():
@@ -591,6 +670,7 @@ def prepare(minecraft=None, server_jar=None):
         "version": manifest["id"], "jars": {k: str(v.relative_to(ROOT)) for k, v in jars.items()},
         "libraries": {"client": [str(p.relative_to(ROOT)) for p in client_libraries],
                       "server": [str(p.relative_to(ROOT)) for p in server_libraries]},
+        "remapped_sha256": remapped_sha256,
     })
     print(f"Artifacts: {directory}", flush=True)
 
@@ -680,6 +760,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     preparer = commands.add_parser("prepare", help="Import your own pinned game files, fetch the decompiler; inventory classes")
     add_game_arguments(preparer)
+    preparer.add_argument("--java", default="java")
     decompiler = commands.add_parser("decompile", help="Decompile locally and check source-file coverage")
     decompiler.add_argument("--side", choices=["client", "server", "both"], default="both")
     decompiler.add_argument("--java", default="java")
@@ -693,7 +774,7 @@ def main():
         parser.error("--heap must look like 6G or 512M")
     try:
         if args.command == "prepare":
-            prepare(args.minecraft_dir, args.server_jar)
+            prepare(args.minecraft_dir, args.server_jar, args.java)
             return 0
         if args.command == "decompile":
             return decompile(args)

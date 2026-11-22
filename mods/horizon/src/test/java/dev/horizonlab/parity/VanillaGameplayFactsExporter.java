@@ -13,6 +13,7 @@ import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Original exporter of per-state gameplay facts read through vanilla's own accessors:
@@ -22,8 +23,46 @@ import net.minecraft.world.phys.shapes.Shapes;
 public final class VanillaGameplayFactsExporter {
     private static JsonObject sound(SoundEvent event) {
         var result = new JsonObject();
-        result.addProperty("id", event.location().toString());
+        result.addProperty("id", BuiltInRegistries.SOUND_EVENT.getKey(event).toString());
         return result;
+    }
+
+    /** Calls the old contextual accessor or its context-free successor without compiling against both APIs. */
+    private static Object call(Object target, String name, Object... args) {
+        for (var method : target.getClass().getMethods()) {
+            if (method.getName().equals(name) && method.getParameterCount() == args.length) {
+                try {
+                    return method.invoke(target, args);
+                } catch (ReflectiveOperationException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+        throw new IllegalStateException("Missing " + name + "/" + args.length + " on " + target.getClass());
+    }
+
+    private static int dampening(Object state, EmptyBlockGetter level) {
+        try {
+            return (int) call(state, "getLightDampening");
+        } catch (IllegalStateException oldApi) {
+            return (int) call(state, "getLightBlock", level, BlockPos.ZERO);
+        }
+    }
+
+    private static boolean contextualBoolean(Object state, String name, EmptyBlockGetter level) {
+        try {
+            return (boolean) call(state, name);
+        } catch (IllegalStateException oldApi) {
+            return (boolean) call(state, name, level, BlockPos.ZERO);
+        }
+    }
+
+    private static Vec3 offset(Object state, EmptyBlockGetter level) {
+        try {
+            return (Vec3) call(state, "getOffset", BlockPos.ZERO);
+        } catch (IllegalStateException oldApi) {
+            return (Vec3) call(state, "getOffset", level, BlockPos.ZERO);
+        }
     }
 
     /** Writes each state as it is read: the whole file (56 MB) never sits in memory. */
@@ -34,11 +73,11 @@ public final class VanillaGameplayFactsExporter {
             var block = state.getBlock();
             o.addProperty("id", Block.getId(state));
             o.addProperty("emission", state.getLightEmission());
-            o.addProperty("dampening", state.getLightDampening());
-            o.addProperty("skylight_down", state.propagatesSkylightDown());
+            o.addProperty("dampening", dampening(state, level));
+            o.addProperty("skylight_down", contextualBoolean(state, "propagatesSkylightDown", level));
             o.addProperty("shape_occlusion", state.useShapeForLightOcclusion());
             o.addProperty("can_occlude", state.canOcclude());
-            o.addProperty("solid_render", state.isSolidRender());
+            o.addProperty("solid_render", contextualBoolean(state, "isSolidRender", level));
             o.addProperty("hardness", state.getDestroySpeed(level, BlockPos.ZERO));
             o.addProperty("requires_tool", state.requiresCorrectToolForDrops());
             o.addProperty("replaceable", state.canBeReplaced());
@@ -53,7 +92,7 @@ public final class VanillaGameplayFactsExporter {
             o.addProperty("map_color", state.getMapColor(level, BlockPos.ZERO).col);
             // The outline (selection) shape without the random offset, as boxes
             // for picking and as the edges LevelRenderer draws.
-            var offset = state.getOffset(BlockPos.ZERO);
+            var offset = offset(state, level);
             var shape = state.getShape(level, BlockPos.ZERO);
             // Some offset models (e.g. tall flowers) have an unshifted outline.
             boolean outlineOffset = state.hasOffsetFunction() && Shapes.joinIsNotEmpty(

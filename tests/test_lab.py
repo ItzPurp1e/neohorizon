@@ -17,17 +17,65 @@ from tools import agent_control_e2e, check_public_tree, lab
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def minimal_class(source="Example.java"):
+def minimal_class(source="Example.java", name="Example"):
     # A valid class-file structure with no fields/methods and one SourceFile attribute.
     def utf8(value):
         data = value.encode()
         return b"\x01" + struct.pack(">H", len(data)) + data
     return (b"\xca\xfe\xba\xbe" + struct.pack(">HHH", 0, 69, 5)
-            + utf8("SourceFile") + utf8(source) + utf8("Example") + b"\x07\x00\x03"
+            + utf8("SourceFile") + utf8(source) + utf8(name) + b"\x07\x00\x03"
             + struct.pack(">HHHHHHHHIH", 1, 4, 0, 0, 0, 0, 1, 1, 2, 2))
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_old_release_requires_both_pinned_mapping_checksums(self):
+        lock = {"minecraft": {"client_mappings_sha1": "a" * 40,
+                              "server_mappings_sha1": "b" * 40}}
+        manifest = {"downloads": {"client_mappings": {"sha1": "a" * 40},
+                                  "server_mappings": {"sha1": "b" * 40}}}
+        self.assertTrue(lab.mapping_pins_match(lock, manifest))
+        self.assertFalse(lab.mapping_pins_match(lock, {"downloads": {
+            **manifest["downloads"], "server_mappings": {"sha1": "c" * 40}}}))
+        self.assertFalse(lab.mapping_pins_match(lock, {"downloads": {
+            "client_mappings": manifest["downloads"]["client_mappings"]}}))
+        self.assertFalse(lab.mapping_pins_match({"minecraft": {}}, manifest))
+        self.assertFalse(lab.mapping_pins_match({"minecraft": {}}, {"downloads": {"client_mappings": {}}}))
+        self.assertTrue(lab.mapping_pins_match({"minecraft": {}}, {"downloads": {}}))
+
+    def test_mapping_downloads_are_verified_and_reused(self):
+        content = {"client": b"client mapping", "server": b"server mapping"}
+        manifest = {"downloads": {f"{side}_mappings": {
+            "sha1": hashlib.sha1(data).hexdigest(), "url": f"https://example.invalid/{side}.txt"}
+            for side, data in content.items()}}
+        lock = {"minecraft": {f"{side}_mappings_sha1": manifest["downloads"][f"{side}_mappings"]["sha1"]
+                              for side in content}}
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch("urllib.request.urlopen", side_effect=[io.BytesIO(data) for data in content.values()]):
+                paths = lab.download_mappings(manifest, Path(temp), lock)
+            self.assertEqual({side: path.read_bytes() for side, path in paths.items()}, content)
+            with mock.patch("urllib.request.urlopen") as request:
+                self.assertEqual(lab.download_mappings(manifest, Path(temp), lock), paths)
+                request.assert_not_called()
+            wrong = {"minecraft": {**lock["minecraft"], "server_mappings_sha1": "0" * 40}}
+            with self.assertRaisesRegex(ValueError, "do not match lock"):
+                lab.download_mappings(manifest, Path(temp), wrong)
+
+    @unittest.skipUnless(os.environ.get("HORIZON_TEST_REMAPPER"), "needs the pinned remapper jar")
+    def test_remapped_jar_is_named_and_byte_identical_on_a_rerun(self):
+        tool = Path(os.environ["HORIZON_TEST_REMAPPER"])
+        java = os.environ.get("HORIZON_TEST_JAVA", "java")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, mapping, output = root / "input.jar", root / "mappings.txt", root / "output.jar"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("a.class", minimal_class("Named.java", "a"))
+            mapping.write_text("demo.Named -> a:\n", encoding="utf-8")
+            _, first = lab.remap_jar(java, tool, source, mapping, output)
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn("demo/Named.class", archive.namelist())
+            _, second = lab.remap_jar(java, tool, source, mapping, output)
+            self.assertEqual(first, second)
+
     def test_download_rejects_corruption_without_overwriting_existing_file(self):
         with tempfile.TemporaryDirectory() as temp:
             destination = Path(temp) / "game.jar"
