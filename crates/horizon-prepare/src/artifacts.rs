@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 25348)
-Total output lines: 2434
+Warning: truncated output (original token count: 25537)
+Total output lines: 2453
 
 //! The player's own game files: the pinned version JSON, client jar and libraries from their
 //! official launcher or ATLauncher install, and the server jar they downloaded, each checked against
@@ -190,6 +190,8 @@ pub struct PrismFiles {
 pub struct Inputs {
     pub version_json: Option<PathBuf>,
     pub client_jar: Option<PathBuf>,
+    pub client_mappings: Option<PathBuf>,
+    pub server_mappings: Option<PathBuf>,
     pub libraries_dir: Option<PathBuf>,
     pub assets_dir: Option<PathBuf>,
     pub prism_dir: Option<PathBuf>,
@@ -953,8 +955,7 @@ fn native_library_matches(library: &Value, names: &[&str]) -> bool {
         [group, artifact, version] if artifact.contains("-natives-") => {
             (artifact, format!("{group}:{artifact}-{{}}:{version}"))
         }
-        [_, _, _, classifier, ..] => (classifier, format!("{name}-{{}}")),
-        _ => ("", String…5348 tokens truncated…)
+        [_, _,…5537 tokens truncated…)
     })?;
     Ok(Artifacts {
         manifest,
