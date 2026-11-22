@@ -2,7 +2,7 @@
 
 ## Статус
 
-**PARTIAL**. Source commit и рабочее окружение установлены. Rust baseline запущен на точном checkout; клиент проходит, protocol и world имеют наблюдаемые тестовые сбои. Предварительные проверки `pr_ready.py` прошли, но Python suite не завершилась за ~12 минут и была прервана, поэтому этап нельзя считать завершённым.
+**COMPLETE — baseline captured.** Точный source commit и переносимое Windows-окружение подготовлены; все пять обязательных baseline-команд запущены, фактические итоги и exit codes сохранены. Этап завершён как аудит исходного состояния, несмотря на имеющиеся тестовые failures.
 
 ## Исходная точка
 
@@ -17,7 +17,7 @@
 - Windows 11, build `10.0.26300.0`; PowerShell 5.1.
 - Git checkout проверен на указанном SHA; Cargo workspace: 73 members.
 - Edition 2024; минимальный Rust `1.95`; CI pin из `tools/ci/rust-version`: `1.99.1`.
-- Для прогона подготовлены локальные portable Rust 1.99.1/1.95.0, Python 3.12.10, MinGit, MSVC 14.51 и Windows SDK headers/libs. Глобальный PATH и системные настройки не менялись.
+- Для прогона подготовлены локальные portable Rust 1.99.1/1.95.0, Python 3.12.10, MinGit, MSVC 14.51 и Windows SDK headers/libs 10.0.28000.0. Глобальный PATH и системные настройки не менялись.
 - Текущие исходники описывают NeoHorizon 26.3 (protocol 777, DataVersion 5023, Java 25), а не runtime 1.21.1.
 
 ## Подтверждённые findings
@@ -29,9 +29,9 @@
 
 ## Baseline
 
-Подробные команды, фактические результаты и ограничения находятся в `TEST_MATRIX.md`. Кратко: client PASS; core PASS; world имеет 3 Windows `PermissionDenied` failures; protocol test process завершается `STATUS_STACK_OVERFLOW`; `pr_ready.py` прошёл предварительные gates, затем был остановлен на долгом Python suite без итоговой сводки.
+Подробные команды, фактические результаты и ограничения находятся в `TEST_MATRIX.md`. Кратко: client PASS; core PASS; world 3 stranded MCC `PermissionDenied` failures; protocol воспроизводимо падает на `item::tests::deeply_nested_bundles_still_decode` со stack overflow, включая `RUST_MIN_STACK=16777216`; Python suite: 2,459 tests, 53 failures, 16 errors, 175 skipped; `pr_ready.py`: 53 failures, 15 errors, 175 skipped. Его общие gates до Python прошли.
 
 ## Завершение этапа
 
-Нужны финальные exit codes и сводка Python suite, расследование Windows-specific failures, сохранение логов и завершённая синхронизация всех audit-файлов на ветке Stage A. До этого Stage A остаётся PARTIAL.
+Исходные логи сохранены локально как `_baseline_*.log` и `_baseline_python_sdkfixed.log` в `D:\Projects\NeoHorizon`. Рабочее дерево исходного checkout чистое и осталось на зафиксированном SHA. Windows-specific тестовые проблемы и Python suite failures переходят в список известных исходных ограничений для следующих этапов; они не были исправлены в рамках аудита.
 
