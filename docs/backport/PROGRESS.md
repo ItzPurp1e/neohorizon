@@ -6,7 +6,7 @@
 
 - Этап A: **PARTIAL**; аудит зафиксирован на source commit `aaa14aa26e4597ee8f18715552c5fe5d6078ac21`, точный checkout и переносимое окружение подготовлены.
 - Rust baseline: клиентские тесты прошли; protocol и world имеют выявленные падения, см. `TEST_MATRIX.md`.
-- Python suite и `tools/pr_ready.py`: прогон `pr_ready` выполняется; предыдущие попытки Python suite завершались ошибками окружения, полный прогон пока не имеет итогового сводного отчёта.
+- Python suite и `tools/pr_ready.py`: предварительные `pr_ready` gates прошли, но полный Python suite не завершился за ~12 минут и был прерван; итогового unittest summary нет.
 - Этапы B–J: **NOT STARTED**.
 
 ## Выполнено
@@ -17,7 +17,7 @@
 - `cargo test --locked -p horizon-client --lib --bins --tests`: PASS; 1,955 library tests и 16 integration tests passed.
 - `cargo test --locked -p horizon-core -p horizon-world`: core 214 passed и дополнительный бинарь 9 passed; world 793 passed, 3 failed, 22 ignored. Все три ошибки `PermissionDenied` в stranded MCC upgrade tests на Windows.
 - `cargo test --locked -p horizon-protocol`: процесс падает с Windows `STATUS_STACK_OVERFLOW` при запуске тестов; точный тест и окружение нужно исследовать отдельно.
-- Запущен `python3 tools/pr_ready.py`: прошли public tree, repository hygiene, layers, addresses, export lists и test stand-ins; Python tests выполняются.
+- Запущен `python3 tools/pr_ready.py`: public tree, repository hygiene, layers, addresses, export lists и test stand-ins прошли; Python tests не завершились за ~12 минут и были прерваны.
 - Обновлённые документы Stage A находятся в `docs/backport/` и на ветке `backport/1.21.1-stage-a`, не в `main`.
 
 ## Следующий шаг
