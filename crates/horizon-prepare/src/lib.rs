@@ -653,6 +653,7 @@ fn prepare_impl(
                     options.minecraft_dir.as_deref(),
                     &options.inputs,
                     options.server_jar.as_deref(),
+                    &jdk.java,
                     log,
                 )?;
             }

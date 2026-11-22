@@ -16,7 +16,7 @@ const HELP: &str = "\
 horizon-prepare: prepare Horizon's resources from your own Minecraft Java Edition
 
 Usage: horizon-prepare [--prepare] [--server-jar PATH] [--minecraft-dir PATH] [--prism-dir PATH] [--root PATH] [--output PATH]
-                       [--version-json PATH] [--client-jar PATH] [--client-mappings PATH] [--server-mappings PATH]
+                       [--version-json PATH] [--client-jar PATH] [--client-mappings PATH] [--server-mappings PATH] [--remapper-jar PATH]
                        [--libraries-dir PATH] [--assets-dir PATH]
                        [--java-home PATH] [--complete] [--progress json]
        horizon-prepare --check [--root PATH] [--output PATH]
@@ -40,6 +40,7 @@ Usage: horizon-prepare [--prepare] [--server-jar PATH] [--minecraft-dir PATH] [-
   --client-jar PATH     The pinned client jar, where --minecraft-dir has none
   --client-mappings PATH  The pinned client mappings for an obfuscated release
   --server-mappings PATH  The pinned server mappings for an obfuscated release
+  --remapper-jar PATH   The pinned AutoRenamingTool JAR for an obfuscated release
   --libraries-dir PATH  The folder of the client's libraries (Maven layout)
   --assets-dir PATH     The asset store, with indexes/ and objects/
                         (each of these four replaces what --minecraft-dir would give; an earlier
@@ -154,6 +155,9 @@ fn main() -> ExitCode {
             }
             "--server-mappings" => {
                 value("--server-mappings").map(|v| options.inputs.server_mappings = Some(v))
+            }
+            "--remapper-jar" => {
+                value("--remapper-jar").map(|v| options.inputs.remapper_jar = Some(v))
             }
             "--libraries-dir" => {
                 value("--libraries-dir").map(|v| options.inputs.libraries_dir = Some(v))
@@ -379,4 +383,3 @@ mod tests {
         }
     }
 }
-

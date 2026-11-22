@@ -32,6 +32,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import shutil
 import subprocess
@@ -165,15 +166,29 @@ def java_command(major):
     return str(java)
 
 
-def run_datagen(server, reports, major):
+def javac_command(major):
+    """The compiler beside the selected Java; legacy exporter verification needs a JDK."""
+    java = Path(java_command(major))
+    javac = java.with_name("javac.exe" if os.name == "nt" else "javac")
+    if not javac.is_file():
+        found = shutil.which("javac")
+        javac = Path(found) if found else javac
+    if not javac.is_file():
+        raise SystemExit(f"Legacy exporter verification needs JDK {major}; no javac beside {java}")
+    return str(javac)
+
+
+def run_datagen(server, reports, major, libraries=()):
     """vanilla's data generator, --reports only. The bundler unpacks its libraries into a scratch folder."""
     scratch = Path(tempfile.mkdtemp(prefix=".datagen-", dir=STORE))
     out = scratch / "out"
     try:
         log = scratch / "datagen.log"
         with log.open("w") as stream:
-            result = subprocess.run([java_command(major), "-DbundlerMainClass=net.minecraft.data.Main", "-jar",
-                                     str(server), "--reports", "--output", str(out)],
+            command = ([java_command(major), "-cp", os.pathsep.join(map(str, [server, *libraries])),
+                        "net.minecraft.data.Main"] if libraries else
+                       [java_command(major), "-DbundlerMainClass=net.minecraft.data.Main", "-jar", str(server)])
+            result = subprocess.run([*command, "--reports", "--output", str(out)],
                                     cwd=scratch, stdout=stream, stderr=subprocess.STDOUT)
         if result.returncode:
             raise SystemExit(f"The data generator failed:\n{log.read_text()[-3000:]}")
@@ -182,6 +197,52 @@ def run_datagen(server, reports, major):
         shutil.move(str(out / "reports"), reports)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def run_legacy_exporters(server, reports, major, libraries):
+    """Compile and run two real registry exporters against a named legacy server JAR.
+
+    Their data is small enough for a port preflight but exercises vanilla bootstrap, registries,
+    block-state accessors and entity attributes. A cached output must be byte-identical.
+    """
+    names = ("VanillaGameplayFactsExporter", "VanillaEntityTypesExporter")
+    source_root = lab.ROOT / "mods" / "horizon" / "src" / "test" / "java"
+    scratch = Path(tempfile.mkdtemp(prefix=".exporters-", dir=STORE))
+    classes = scratch / "classes"
+    classes.mkdir()
+    classpath = os.pathsep.join(map(str, [server, *libraries]))
+    try:
+        compile_log = scratch / "compile.log"
+        with compile_log.open("w") as stream:
+            result = subprocess.run([
+                javac_command(major), "-proc:none", "-encoding", "UTF-8", "-cp", classpath,
+                "-sourcepath", str(source_root), "-d", str(classes),
+                *(str(source_root / "dev" / "horizonlab" / "parity" / f"{name}.java") for name in names),
+            ], stdout=stream, stderr=subprocess.STDOUT)
+        if result.returncode:
+            raise SystemExit(f"Legacy exporter compilation failed:\n{compile_log.read_text()[-5000:]}")
+        reports.mkdir(parents=True, exist_ok=True)
+        output_classpath = os.pathsep.join([str(classes), classpath])
+        hashes = {}
+        for name in names:
+            temporary = scratch / f"{name}.json"
+            result = subprocess.run([
+                java_command(major), "-cp", output_classpath, f"dev.horizonlab.parity.{name}", str(temporary)
+            ], capture_output=True, text=True)
+            if result.returncode:
+                raise SystemExit(f"{name} failed:\n{(result.stdout + result.stderr)[-5000:]}")
+            checksum = lab.digest(temporary, "sha256")
+            destination = reports / f"{name}.json"
+            if destination.is_file() and lab.digest(destination, "sha256") != checksum:
+                raise ValueError(f"Legacy exporter output is not deterministic: {destination}")
+            if not destination.exists():
+                temporary.replace(destination)
+            hashes[name] = checksum
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    print(f"Verified {len(hashes)} legacy exporters: "
+          + ", ".join(f"{name}={checksum}" for name, checksum in hashes.items()), flush=True)
+    return reports
 
 
 def prepare_pinned(version, directory):
@@ -219,13 +280,33 @@ def prepare_download(version, directory):
         download = meta["downloads"][side]
         print(f"Fetching the {version} {side} jar ({download['size'] // 1_000_000} MB)", flush=True)
         found[side] = lab.download(download["url"], jars / f"{side}.jar", download["sha1"])
-    found["server_game"] = unpack_game(found["server"], jars / "server-game.jar", version)
+    found["server_game"], server_libraries = lab.unpack_server(found["server"], directory, version)
     if legacy:
-        raise SystemExit(f"{version} client/server JARs and mappings are verified and cached; JAR remapping is not yet available")
+        client_root = directory / "libraries" / "client"
+        client_libraries = []
+        for artifact in lab.client_library_artifacts(meta):
+            relative = PurePosixPath(artifact["path"])
+            if relative.is_absolute() or ".." in relative.parts or "\\" in artifact["path"]:
+                raise ValueError(f"Unsafe client library path: {artifact['path']}")
+            client_libraries.append(lab.download(
+                artifact["url"], client_root.joinpath(*relative.parts), artifact["sha1"]))
+        found["client_libraries"] = client_root
+        print(f"Verified {len(client_libraries)} client libraries for exporter compilation", flush=True)
+        tool = lab.remapper(json.loads(lab.LOCK.read_text(encoding="utf-8")))
+        java = java_command(meta["javaVersion"]["majorVersion"])
+        mappings = {side: directory / "mappings" / f"{side}.txt" for side in ("client", "server")}
+        found["client"], _ = lab.remap_jar(java, tool, found["client"], mappings["client"],
+                                            jars / "client-named.jar")
+        found["server_game"], _ = lab.remap_jar(java, tool, found["server_game"], mappings["server"],
+                                                 jars / "server-game-named.jar", server_libraries)
     found["reports"] = directory / "datagen" / "reports"
     if not found["reports"].exists():
         print(f"Running the {version} data generator", flush=True)
-        run_datagen(found["server"], found["reports"], meta["javaVersion"]["majorVersion"])
+        run_datagen(found["server_game"] if legacy else found["server"], found["reports"],
+                    meta["javaVersion"]["majorVersion"], server_libraries if legacy else ())
+    if legacy:
+        found["exporters"] = run_legacy_exporters(
+            found["server_game"], directory / "exporters", meta["javaVersion"]["majorVersion"], server_libraries)
     return found
 
 
@@ -241,9 +322,21 @@ def prepare(args):
     classes = class_index.index_jars([found["client"], found["server_game"]], jobs=args.jobs)
     (directory / "classes.json").write_text(json.dumps(classes, separators=(",", ":")))
     print(f"Indexed {len(classes)} classes, {sum(len(c['methods']) for c in classes.values())} methods")
+    verified = {key: {"sha1": lab.digest(path, "sha1"), "sha256": lab.digest(path, "sha256")}
+                for key, path in found.items() if path.is_file()}
+    for side in ("client", "server"):
+        mapping = directory / "mappings" / f"{side}.txt"
+        if mapping.is_file():
+            verified[f"{side}_mappings"] = {
+                "sha1": lab.digest(mapping, "sha1"), "sha256": lab.digest(mapping, "sha256")}
+    exporters = directory / "exporters"
+    if exporters.is_dir():
+        for output in sorted(exporters.glob("*.json")):
+            verified[f"exporter_{output.stem}"] = {
+                "sha1": lab.digest(output, "sha1"), "sha256": lab.digest(output, "sha256")}
     lab.write_json(directory / "prepared.json", {
         "version": version, "pinned": version == pinned() and not args.download,
-        "paths": {key: str(path) for key, path in found.items()},
+        "paths": {key: str(path) for key, path in found.items()}, "verified": verified,
     })
     print(json.dumps(facts, indent=2))
     return 0
@@ -765,4 +858,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

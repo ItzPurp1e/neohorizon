@@ -30,7 +30,7 @@ public final class VanillaEntityTypesExporter {
                 var attributes = new JsonObject();
                 for (var attribute : BuiltInRegistries.ATTRIBUTE.asHolderIdMap()) {
                     if (supplier.hasAttribute(attribute))
-                        attributes.addProperty(attribute.unwrapKey().orElseThrow().identifier().toString(), supplier.getBaseValue(attribute));
+                        attributes.addProperty(BuiltInRegistries.ATTRIBUTE.getKey(attribute.value()).toString(), supplier.getBaseValue(attribute));
                 }
                 o.add("attributes", attributes);
             }

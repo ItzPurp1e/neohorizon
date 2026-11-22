@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 25537)
-Total output lines: 2453
-
 //! The player's own game files: the pinned version JSON, client jar and libraries from their
 //! official launcher or ATLauncher install, and the server jar they downloaded, each checked against
 //! research-lock.json before it is copied to `.local/minecraft/<version>` (tools/lab.py's
@@ -96,11 +93,15 @@ impl Lock {
         };
         if !sides.iter().any(|side| {
             pinned(side).is_some()
-                || downloads.and_then(|d| d.get(&format!("{side}_mappings"))).is_some()
+                || downloads
+                    .and_then(|d| d.get(&format!("{side}_mappings")))
+                    .is_some()
         }) {
             return true;
         }
-        sides.iter().all(|side| pinned(side).is_some_and(|sha1| mapped(side) == Some(sha1)))
+        sides
+            .iter()
+            .all(|side| pinned(side).is_some_and(|sha1| mapped(side) == Some(sha1)))
     }
 
     /// The asset indexes of those republished version JSONs: a launcher keeps one
@@ -192,6 +193,7 @@ pub struct Inputs {
     pub client_jar: Option<PathBuf>,
     pub client_mappings: Option<PathBuf>,
     pub server_mappings: Option<PathBuf>,
+    pub remapper_jar: Option<PathBuf>,
     pub libraries_dir: Option<PathBuf>,
     pub assets_dir: Option<PathBuf>,
     pub prism_dir: Option<PathBuf>,
@@ -955,8 +957,700 @@ fn native_library_matches(library: &Value, names: &[&str]) -> bool {
         [group, artifact, version] if artifact.contains("-natives-") => {
             (artifact, format!("{group}:{artifact}-{{}}:{version}"))
         }
-        [_, _,…5537 tokens truncated…)
+        [_, _, _, classifier, ..] => (classifier, format!("{name}-{{}}")),
+        _ => ("", String::new()),
+    };
+    if classifier_ends_with(classifier, &["arm64", "aarch64", "aarch_64"]) {
+        return arm;
+    }
+    if classifier_ends_with(classifier, &["x86_64", "x64"]) {
+        return !arm;
+    }
+    if arm && classifier.contains("natives-") {
+        return !["arm64", "aarch64"]
+            .iter()
+            .any(|suffix| names.contains(&variant.replace("{}", suffix).as_str()));
+    }
+    true
+}
+
+/// The client libraries the official launcher installs on this OS and architecture: each
+/// library's Maven name and its download.
+fn client_library_artifacts(manifest: &Value) -> Result<Vec<(&str, &Value)>, String> {
+    let libraries = manifest
+        .get("libraries")
+        .and_then(Value::as_array)
+        .ok_or("The version JSON has no libraries")?;
+    let names: Vec<&str> = libraries
+        .iter()
+        .filter_map(|l| l.get("name").and_then(Value::as_str))
+        .collect();
+    let mut artifacts = Vec::new();
+    for library in libraries {
+        let Some(artifact) = library.get("downloads").and_then(|d| d.get("artifact")) else {
+            continue;
+        };
+        if library_allowed(library)? && native_library_matches(library, &names) {
+            let name = library.get("name").and_then(Value::as_str).unwrap_or("");
+            artifacts.push((name, artifact));
+        }
+    }
+    Ok(artifacts)
+}
+
+/// Netty's native transports (`io.netty:netty-transport-native-kqueue:4.2.16.Final:osx-aarch_64`,
+/// the epoll ones on Linux): the game uses one when it loads and Netty NIO otherwise
+/// (`EventLoopGroupHolder.remote` asks `KQueue.isAvailable()`, then `Epoll.isAvailable()`), and
+/// Prism Launcher never downloads them (#1487). Preparing imports one when the launcher has it.
+fn runs_without(name: &str) -> bool {
+    let mut parts = name.split(':');
+    parts.next() == Some("io.netty")
+        && parts
+            .next()
+            .is_some_and(|artifact| artifact.starts_with("netty-transport-native-"))
+        && parts.nth(1).is_some()
+}
+
+/// A relative path with only normal components and forward slashes, from a manifest or bundle.
+pub(crate) fn safe_relative(path: &str) -> Option<PathBuf> {
+    if path.contains('\\') || path.starts_with('/') {
+        return None;
+    }
+    let parts: Vec<&str> = path
+        .split('/')
+        .filter(|p| !p.is_empty() && *p != ".")
+        .collect();
+    if parts.contains(&"..") || (cfg!(windows) && parts.first().is_some_and(|p| p.contains(':'))) {
+        return None;
+    }
+    Some(parts.iter().collect())
+}
+
+/// A launcher's copy of the library `name`, whose path in the version JSON is `relative`, under
+/// its game folder `minecraft`: at that path, else where Prism Launcher keeps it (#849). Prism's
+/// metadata moves a native jar's classifier into its artifact name
+/// (`com.mojang:jtracy:1.14.38:natives-windows` is its `com.mojang:jtracy-natives-windows:1.14.38`)
+/// and Prism keeps libraries at their name's path, so the same jar, with the same sha1, is in
+/// `com/mojang/jtracy-natives-windows/1.14.38/jtracy-natives-windows-1.14.38.jar`. The path the
+/// version JSON gives is returned when neither exists, for the error to name.
+pub fn launcher_library(minecraft: &Path, name: &str, relative: &Path) -> PathBuf {
+    library_in(&minecraft.join("libraries"), name, relative)
+}
+
+/// `launcher_library` in a libraries folder of its own.
+fn library_in(libraries: &Path, name: &str, relative: &Path) -> PathBuf {
+    let official = libraries.join(relative);
+    if official.is_file() {
+        return official;
+    }
+    if let [group, artifact, version, classifier] = name.split(':').collect::<Vec<_>>()[..] {
+        let artifact = format!("{artifact}-{classifier}");
+        let path = format!(
+            "{}/{artifact}/{version}/{artifact}-{version}.jar",
+            group.replace('.', "/")
+        );
+        if let Some(prism) = safe_relative(&path)
+            .map(|p| libraries.join(p))
+            .filter(|p| p.is_file())
+        {
+            return prism;
+        }
+    }
+    official
+}
+
+fn artifact_fields(artifact: &Value) -> Result<(&str, &str), String> {
+    let path = artifact.get("path").and_then(Value::as_str);
+    let sha1 = artifact.get("sha1").and_then(Value::as_str);
+    path.zip(sha1)
+        .ok_or_else(|| "A library in the version JSON has no path or sha1".to_string())
+}
+
+/// `(sha256, identifier, path)` lines of a server bundle's versions.list or libraries.list.
+fn bundle_entries(
+    archive: &mut crate::Jar,
+    name: &str,
+) -> Result<Vec<(String, String, PathBuf, String)>, String> {
+    let text = crate::zip_text(archive, name)?;
+    let mut entries = Vec::new();
+    for line in crate::split_lines(&text) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        let [checksum, identifier, relative] = fields[..] else {
+            return Err(format!("Malformed line in {name}"));
+        };
+        let path =
+            safe_relative(relative).ok_or_else(|| format!("Unsafe bundled path: {relative}"))?;
+        // PurePosixPath's text: empty and `.` parts dropped.
+        let posix = relative
+            .split('/')
+            .filter(|p| !p.is_empty() && *p != ".")
+            .collect::<Vec<_>>()
+            .join("/");
+        entries.push((checksum.to_string(), identifier.to_string(), path, posix));
+    }
+    Ok(entries)
+}
+
+fn extract_verified(
+    archive: &mut crate::Jar,
+    member: &str,
+    destination: &Path,
+    checksum: &str,
+) -> Result<(), String> {
+    let data = crate::zip_bytes(archive, member)?;
+    if crate::sha256_hex(&data) != checksum {
+        return Err(format!("Bundled artifact checksum mismatch: {member}"));
+    }
+    fs::create_dir_all(destination.parent().unwrap()).map_err(|e| e.to_string())?;
+    fs::write(destination, data).map_err(|e| format!("{}: {e}", destination.display()))
+}
+
+/// Modern server downloads are launchers: the game jar and its libraries are inside.
+fn unpack_server(
+    server: PathBuf,
+    directory: &Path,
+    version: &str,
+) -> Result<(PathBuf, Vec<PathBuf>), String> {
+    let mut archive = crate::open_zip(&server)?;
+    if archive.index_for_name("META-INF/versions.list").is_none() {
+        return Ok((server, Vec::new()));
+    }
+    let versions = bundle_entries(&mut archive, "META-INF/versions.list")?;
+    if versions.len() != 1 || versions[0].1 != version {
+        return Err("Expected one bundled server matching the pinned version".into());
+    }
+    let (checksum, _, _, relative) = &versions[0];
+    let game = directory.join("jars/server-game.jar");
+    extract_verified(
+        &mut archive,
+        &format!("META-INF/versions/{relative}"),
+        &game,
+        checksum,
+    )?;
+    let entries = bundle_entries(&mut archive, "META-INF/libraries.list")?;
+    let libraries = crate::pool::map(&entries, |(checksum, _, path, relative)| {
+        let destination = directory.join("libraries/server").join(path);
+        extract_verified(
+            &mut archive.clone(),
+            &format!("META-INF/libraries/{relative}"),
+            &destination,
+            checksum.as_str(),
+        )?;
+        Ok(destination)
     })?;
+    Ok((game, libraries))
+}
+
+/// Imports the player's own pinned game files into `.local/minecraft/<version>` and writes the
+/// class inventories and prepared.json (tools/lab.py `prepare`). The decompiler lab.py also
+/// fetches is a development tool, not something preparing needs; `tools/lab.py prepare` gets it.
+pub fn import(
+    root: &Path,
+    lock: &Lock,
+    minecraft: Option<&Path>,
+    inputs: &Inputs,
+    server_jar: Option<&Path>,
+    java: &Path,
+    log: Log,
+) -> Result<(), String> {
+    let files = game_files(minecraft, &lock.version).with(inputs, &lock.version);
+    let manifest = import_manifest(lock, &files)?;
+    let client = import_copy(
+        &files.client,
+        &lock.directory.join("jars/client.jar"),
+        lock.pin("client_sha1")?,
+        "sha1",
+        &files.hint(&lock.version),
+    )?;
+    let downloads = manifest.get("downloads");
+    let legacy = downloads.and_then(|d| d.get("client_mappings")).is_some()
+        || downloads.and_then(|d| d.get("server_mappings")).is_some();
+    if legacy {
+        for (side, chosen) in [
+            ("client", &inputs.client_mappings),
+            ("server", &inputs.server_mappings),
+        ] {
+            let destination = lock.directory.join(format!("mappings/{side}.txt"));
+            let source = chosen
+                .as_deref()
+                .map(expand_user)
+                .unwrap_or_else(|| destination.clone());
+            import_copy(
+                &source,
+                &destination,
+                lock.pin(&format!("{side}_mappings_sha1"))?,
+                "sha1",
+                &format!("Pass --{side}-mappings PATH with the official {side} mappings"),
+            )?;
+        }
+    }
+    let id = manifest
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or("The version JSON has no id")?;
+    // The jar read, which --client-jar may have named outside the Minecraft folder.
+    log(&format!(
+        "Imported client {id} from {}",
+        files.client.display()
+    ));
+    let mut imports = Vec::new();
+    for (name, artifact) in client_library_artifacts(&manifest)? {
+        let (path, sha1) = artifact_fields(artifact)?;
+        let relative = safe_relative(path).ok_or("Unsafe library path")?;
+        let source = library_in(&files.libraries, name, &relative);
+        let destination = lock.directory.join("libraries/client").join(&relative);
+        if runs_without(name) && !source.is_file() && !destination.exists() {
+            log(&format!(
+                "No {name} in {}: the game runs without it",
+                files.libraries.display()
+            ));
+            continue;
+        }
+        imports.push((source, destination, sha1));
+    }
+    let hint = files.hint(&lock.version);
+    let client_libraries = crate::pool::map(&imports, |(source, destination, sha1)| {
+        import_copy(source, destination, sha1, "sha1", &hint)
+    })?;
+    // Prism Launcher never downloads the server jar. Its client jar contains every server class
+    // (and Prism's libraries are a superset of the server bundle's), so the client jar is the
+    // server side of exporters and the data generator instead.
+    let (server, server_libraries, server_from_client) =
+        match import_server(lock, server_jar, files.prism.is_some())? {
+            Some(server) => {
+                let (game, libraries) = unpack_server(server, &lock.directory, id)?;
+                (game, libraries, false)
+            }
+            None => {
+                log("Prism has no server jar: using its client jar for the server side");
+                (client.clone(), client_libraries.clone(), true)
+            }
+        };
+    let (client, server) = if legacy {
+        let tool = lock
+            .json
+            .get("remapper")
+            .ok_or("research-lock.json has no remapper")?;
+        let name = tool
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or("remapper has no name")?;
+        let version = tool
+            .get("version")
+            .and_then(Value::as_str)
+            .ok_or("remapper has no version")?;
+        let sha256 = tool
+            .get("sha256")
+            .and_then(Value::as_str)
+            .ok_or("remapper has no sha256")?;
+        let destination = lock
+            .directory
+            .join(format!("tools/{name}-{version}-all.jar"));
+        let source = inputs
+            .remapper_jar
+            .as_deref()
+            .map(expand_user)
+            .unwrap_or_else(|| destination.clone());
+        let remapper = import_copy(
+            &source,
+            &destination,
+            sha256,
+            "sha256",
+            "Pass --remapper-jar PATH",
+        )?;
+        (
+            remap_jar(
+                java,
+                &remapper,
+                &client,
+                &lock.directory.join("mappings/client.txt"),
+                &lock.directory.join("jars/client-remapped.jar"),
+                &client_libraries,
+            )?,
+            remap_jar(
+                java,
+                &remapper,
+                &server,
+                &lock.directory.join("mappings/server.txt"),
+                &lock.directory.join("jars/server-remapped.jar"),
+                &server_libraries,
+            )?,
+        )
+    } else {
+        (client, server)
+    };
+    write_import_metadata(
+        root,
+        lock,
+        &client,
+        &server,
+        &client_libraries,
+        &server_libraries,
+        files.prism.is_some(),
+        server_from_client,
+        log,
+    )
+}
+
+fn remap_jar(
+    java: &Path,
+    remapper: &Path,
+    source: &Path,
+    mappings: &Path,
+    destination: &Path,
+    libraries: &[PathBuf],
+) -> Result<PathBuf, String> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", destination.display()))?;
+    fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    let temporary = parent.join(format!(
+        ".{}.{}.tmp",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("remapped.jar"),
+        std::process::id()
+    ));
+    if temporary.exists() {
+        fs::remove_file(&temporary).map_err(|e| format!("{}: {e}", temporary.display()))?;
+    }
+    let mut command = crate::java::command(java);
+    command
+        .arg("-jar")
+        .arg(remapper)
+        .arg("--input")
+        .arg(source)
+        .arg("--output")
+        .arg(&temporary)
+        .arg("--map")
+        .arg(mappings)
+        .arg("--reverse")
+        .arg("--strip-sigs");
+    for library in libraries {
+        command.arg("--lib").arg(library);
+    }
+    let output = command
+        .output()
+        .map_err(|e| format!("Could not run {}: {e}", remapper.display()))?;
+    if !output.status.success() {
+        let _ = fs::remove_file(&temporary);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(format!(
+            "Remapping {} failed ({}): {}{}",
+            source.display(),
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+    if !temporary.is_file() {
+        return Err(format!("The remapper produced no {}", temporary.display()));
+    }
+    let generated = digest(&temporary, "sha256")?;
+    if destination.is_file() {
+        let existing = digest(destination, "sha256")?;
+        fs::remove_file(&temporary).map_err(|e| format!("{}: {e}", temporary.display()))?;
+        if existing != generated {
+            return Err(format!(
+                "Remapping {} was not deterministic: cached {existing}, generated {generated}",
+                source.display()
+            ));
+        }
+        return Ok(destination.to_path_buf());
+    }
+    fs::rename(&temporary, destination).map_err(|e| {
+        let _ = fs::remove_file(&temporary);
+        format!("{}: {e}", destination.display())
+    })?;
+    Ok(destination.to_path_buf())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_import_metadata(
+    root: &Path,
+    lock: &Lock,
+    client: &Path,
+    server: &Path,
+    client_libraries: &[PathBuf],
+    server_libraries: &[PathBuf],
+    manifest_from_prism: bool,
+    server_from_client: bool,
+    log: Log,
+) -> Result<(), String> {
+    let sides = [("client", client), ("server", server)];
+    let inventories = crate::pool::map(&sides, |(_, jar)| crate::inventory::inventory(jar))?;
+    for ((side, _), data) in sides.into_iter().zip(inventories) {
+        let count = |key| data.get(key).cloned().unwrap_or(Value::Null);
+        write_json(
+            &lock
+                .directory
+                .join(format!("reports/{side}-inventory.json")),
+            &data,
+        )?;
+        log(&format!(
+            "{side}: {} classes, {} methods",
+            pyjson::dumps(&count("class_count"), &pyjson::DEFAULT),
+            pyjson::dumps(&count("method_count"), &pyjson::DEFAULT)
+        ));
+    }
+    let paths = |list: &[PathBuf]| -> Result<Value, String> {
+        Ok(Value::Array(
+            list.iter()
+                .map(|p| relative_display(p, root).map(Value::Str))
+                .collect::<Result<_, _>>()?,
+        ))
+    };
+    write_json(
+        &lock.directory.join("prepared.json"),
+        &Value::Object(vec![
+            ("version".into(), Value::str(&lock.version)),
+            (
+                "manifest_source".into(),
+                Value::str(if manifest_from_prism {
+                    "prism"
+                } else {
+                    "mojang"
+                }),
+            ),
+            (
+                "server_source".into(),
+                Value::str(if server_from_client { "client" } else { "jar" }),
+            ),
+            (
+                "jars".into(),
+                Value::Object(vec![
+                    ("client".into(), Value::Str(relative_display(client, root)?)),
+                    ("server".into(), Value::Str(relative_display(server, root)?)),
+                ]),
+            ),
+            (
+                "remapped_sha256".into(),
+                Value::Object(vec![
+                    ("client".into(), Value::str(&digest(client, "sha256")?)),
+                    ("server".into(), Value::str(&digest(server, "sha256")?)),
+                ]),
+            ),
+            (
+                "libraries".into(),
+                Value::Object(vec![
+                    ("client".into(), paths(client_libraries)?),
+                    ("server".into(), paths(server_libraries)?),
+                ]),
+            ),
+        ]),
+    )?;
+    log(&format!("Artifacts: {}", lock.directory.display()));
+    Ok(())
+}
+
+/// The checked jars (`client`, `server` = the bundle's inner game jar) and the server
+/// libraries, authenticated against the lock and the bundle's own checksums on every run.
+pub struct Artifacts {
+    pub manifest: Value,
+    pub jars: HashMap<&'static str, PathBuf>,
+    pub libraries: Vec<PathBuf>,
+    /// The version JSON came from Prism's rewritten metadata (`prepared.json`'s
+    /// `manifest_source`); its SHA-1 is not one Mojang published, so `verify` checks its pins.
+    pub manifest_from_prism: bool,
+    /// There was no server jar: the client jar is the server side (`server_source: "client"`).
+    pub server_from_client: bool,
+}
+
+/// Reuses checked imports from this root or another installed version beside it.
+pub fn reuse_imported(root: &Path, log: Log) -> Result<bool, String> {
+    Ok(reuse_verified(root, log)?.is_some())
+}
+
+/// Keep this preparation's verified artifacts and client libraries for the exporters.
+pub(crate) fn reuse_verified(
+    root: &Path,
+    log: Log,
+) -> Result<Option<(Artifacts, Vec<PathBuf>)>, String> {
+    let root = fs::canonicalize(root).map_err(|e| format!("{}: {e}", root.display()))?;
+    let lock = Lock::read(&root)?;
+    let checked = |directory: PathBuf| -> Result<(Artifacts, Vec<PathBuf>), String> {
+        let candidate = Lock {
+            json: lock.json.clone(),
+            version: lock.version.clone(),
+            java_major: lock.java_major,
+            directory,
+        };
+        let found = verify(&candidate)?;
+        let client = client_libraries(&candidate, &found.manifest)?;
+        Ok((found, client))
+    };
+    if let Ok((found, client_libraries)) = checked(lock.directory.clone()) {
+        if [
+            "prepared.json",
+            "reports/client-inventory.json",
+            "reports/server-inventory.json",
+        ]
+        .iter()
+        .any(|path| !lock.directory.join(path).is_file())
+        {
+            write_import_metadata(
+                &root,
+                &lock,
+                &found.jars["client"],
+                &found.jars["server"],
+                &client_libraries,
+                &found.libraries,
+                found.manifest_from_prism,
+                found.server_from_client,
+                log,
+            )?;
+        }
+        log(&format!("Using imported Minecraft {}", lock.version));
+        return Ok(Some((found, client_libraries)));
+    }
+    let Some(versions) = root.parent() else {
+        return Ok(None);
+    };
+    // Sibling discovery is intended for the launcher's versions/ folder.
+    let mut siblings: Vec<_> = fs::read_dir(versions)
+        .map_err(|e| format!("{}: {e}", versions.display()))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path != &root && path.is_dir())
+        .collect();
+    siblings.sort();
+    for sibling in siblings {
+        let source = sibling.join(".local/minecraft").join(&lock.version);
+        let Ok((found, client)) = checked(source.clone()) else {
+            continue;
+        };
+        let mut files = vec![
+            source.join("manifest.json"),
+            source.join("prepared.json"),
+            source.join("jars/client.jar"),
+            source.join("jars/server.jar"),
+            found.jars["server"].clone(),
+        ];
+        files.extend(found.libraries);
+        files.extend(client);
+        for file in files.into_iter().filter(|file| file.is_file()) {
+            let relative = file.strip_prefix(&source).map_err(|e| e.to_string())?;
+            import_copy(
+                &file,
+                &lock.directory.join(relative),
+                &digest(&file, "sha256")?,
+                "sha256",
+                "",
+            )?;
+        }
+        let found = verify(&lock)?;
+        let client_libraries = client_libraries(&lock, &found.manifest)?;
+        write_import_metadata(
+            &root,
+            &lock,
+            &found.jars["client"],
+            &found.jars["server"],
+            &client_libraries,
+            &found.libraries,
+            found.manifest_from_prism,
+            found.server_from_client,
+            log,
+        )?;
+        log(&format!(
+            "Reused imported Minecraft {} from {}",
+            lock.version,
+            sibling.display()
+        ));
+        return Ok(Some((found, client_libraries)));
+    }
+    Ok(None)
+}
+
+pub fn verify(lock: &Lock) -> Result<Artifacts, String> {
+    let manifest_path = lock.directory.join("manifest.json");
+    if !manifest_path.exists() {
+        return Err(format!(
+            "{} is missing: prepare with --prepare first",
+            manifest_path.display()
+        ));
+    }
+    let prepared = read_json(&lock.directory.join("prepared.json")).ok();
+    let source = |key: &str| {
+        prepared
+            .as_ref()
+            .and_then(|prepared| prepared.get(key))
+            .and_then(Value::as_str)
+    };
+    let manifest_from_prism = source("manifest_source") == Some("prism");
+    let server_from_client = source("server_source") == Some("client");
+    let accepted = lock.manifest_accepted(&digest(&manifest_path, "sha1")?);
+    let manifest = read_json(&manifest_path)?;
+    if !accepted && !(manifest_from_prism && manifest_pins_match(lock, &manifest)) {
+        return Err("Manifest checksum changed; prepare again with --prepare".into());
+    }
+    let id = manifest.get("id").and_then(Value::as_str).unwrap_or("");
+    if id != lock.version {
+        return Err("Manifest version differs from the lock".into());
+    }
+    let mut jars = HashMap::new();
+    let client = lock.directory.join("jars/client.jar");
+    let pinned = manifest
+        .get("downloads")
+        .and_then(|downloads| downloads.get("client"))
+        .and_then(|download| download.get("sha1"))
+        .and_then(Value::as_str);
+    let good = pinned == Some(lock.pin("client_sha1")?)
+        && client.exists()
+        && Some(digest(&client, "sha1")?.as_str()) == pinned;
+    if !good {
+        return Err("client artifact checksum changed; prepare again with --prepare".into());
+    }
+    jars.insert("client", client.clone());
+    if server_from_client {
+        // Prism keeps no server jar: the client jar is the server side (its classes are a
+        // superset of the bundled server's), and the client libraries are its classpath.
+        jars.insert("server", client);
+        let libraries = client_libraries(lock, &manifest)?;
+        use_verified_remaps(lock, &manifest, prepared.as_ref(), &mut jars)?;
+        return Ok(Artifacts {
+            manifest,
+            jars,
+            libraries,
+            manifest_from_prism,
+            server_from_client,
+        });
+    }
+    let server = lock.directory.join("jars/server.jar");
+    let pinned = manifest
+        .get("downloads")
+        .and_then(|downloads| downloads.get("server"))
+        .and_then(|download| download.get("sha1"))
+        .and_then(Value::as_str);
+    let good = pinned == Some(lock.pin("server_sha1")?)
+        && server.exists()
+        && Some(digest(&server, "sha1")?.as_str()) == pinned;
+    if !good {
+        return Err("server artifact checksum changed; prepare again with --prepare".into());
+    }
+    let mut archive = crate::open_zip(&server)?;
+    let versions = bundle_entries(&mut archive, "META-INF/versions.list")?;
+    if versions.len() != 1 || versions[0].1 != id {
+        return Err("Unexpected server bundle".into());
+    }
+    let game = lock.directory.join("jars/server-game.jar");
+    if !game.exists() || digest(&game, "sha256")? != versions[0].0 {
+        return Err("Inner server artifact checksum changed".into());
+    }
+    jars.insert("server", game);
+    let entries = bundle_entries(&mut archive, "META-INF/libraries.list")?;
+    let libraries = crate::pool::map(&entries, |(checksum, _, path, relative)| {
+        let library = lock.directory.join("libraries/server").join(path);
+        if !library.exists() || digest(&library, "sha256")? != *checksum {
+            return Err(format!("Dependency checksum changed: {relative}"));
+        }
+        Ok(library)
+    })?;
+    use_verified_remaps(lock, &manifest, prepared.as_ref(), &mut jars)?;
     Ok(Artifacts {
         manifest,
         jars,
@@ -964,6 +1658,48 @@ fn native_library_matches(library: &Value, names: &[&str]) -> bool {
         manifest_from_prism,
         server_from_client,
     })
+}
+
+fn use_verified_remaps(
+    lock: &Lock,
+    manifest: &Value,
+    prepared: Option<&Value>,
+    jars: &mut HashMap<&'static str, PathBuf>,
+) -> Result<(), String> {
+    let downloads = manifest.get("downloads");
+    let legacy = downloads.and_then(|d| d.get("client_mappings")).is_some()
+        || downloads.and_then(|d| d.get("server_mappings")).is_some();
+    if !legacy {
+        return Ok(());
+    }
+    if !lock.mapping_pins_match(manifest) {
+        return Err("Mapping checksums differ from the lock".into());
+    }
+    let hashes = prepared
+        .and_then(|p| p.get("remapped_sha256"))
+        .ok_or("prepared.json has no remapped JAR checksums; prepare again with --prepare")?;
+    for side in ["client", "server"] {
+        let mapping = lock.directory.join(format!("mappings/{side}.txt"));
+        if !mapping.is_file()
+            || digest(&mapping, "sha1")? != lock.pin(&format!("{side}_mappings_sha1"))?
+        {
+            return Err(format!(
+                "{side} mappings checksum changed; prepare again with --prepare"
+            ));
+        }
+        let expected = hashes
+            .get(side)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("prepared.json has no {side} remapped JAR checksum"))?;
+        let jar = lock.directory.join(format!("jars/{side}-remapped.jar"));
+        if !jar.is_file() || digest(&jar, "sha256")? != expected {
+            return Err(format!(
+                "{side} remapped artifact checksum changed; prepare again with --prepare"
+            ));
+        }
+        jars.insert(side, jar);
+    }
+    Ok(())
 }
 
 /// The client libraries, checked against the version JSON (tools/test_model_baking_parity.py's
@@ -1431,6 +2167,7 @@ mod tests {
                 Some(&prism),
                 &Inputs::default(),
                 Some(&server),
+                Path::new("java"),
                 &|_| {},
             )
         };
@@ -1557,7 +2294,16 @@ mod tests {
             prism.join("libraries/com/mojang/minecraft/9.9/minecraft-9.9-client.jar")
         );
 
-        import(&fixture.target, &lock, None, &inputs, None, &|_| {}).unwrap();
+        import(
+            &fixture.target,
+            &lock,
+            None,
+            &inputs,
+            None,
+            Path::new("java"),
+            &|_| {},
+        )
+        .unwrap();
         let found = verify(&lock).unwrap();
         assert!(found.manifest_from_prism);
         assert!(found.server_from_client);
@@ -1650,6 +2396,7 @@ mod tests {
                 Some(dir),
                 &Inputs::default(),
                 Some(&server),
+                Path::new("java"),
                 &|_| {},
             )
         };
@@ -1727,6 +2474,7 @@ mod tests {
                 Some(&empty),
                 inputs,
                 Some(&server),
+                Path::new("java"),
                 &|_| {},
             )
         };
@@ -1763,6 +2511,7 @@ mod tests {
             Some(&empty),
             &Inputs::default(),
             None,
+            Path::new("java"),
             &|_| {},
         )
         .unwrap_err();
@@ -1895,4 +2644,3 @@ mod tests {
         );
     }
 }
-

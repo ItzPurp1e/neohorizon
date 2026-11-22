@@ -17,13 +17,13 @@ from tools import agent_control_e2e, check_public_tree, lab
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def minimal_class(source="Example.java"):
+def minimal_class(source="Example.java", name="Example"):
     # A valid class-file structure with no fields/methods and one SourceFile attribute.
     def utf8(value):
         data = value.encode()
         return b"\x01" + struct.pack(">H", len(data)) + data
     return (b"\xca\xfe\xba\xbe" + struct.pack(">HHH", 0, 69, 5)
-            + utf8("SourceFile") + utf8(source) + utf8("Example") + b"\x07\x00\x03"
+            + utf8("SourceFile") + utf8(source) + utf8(name) + b"\x07\x00\x03"
             + struct.pack(">HHHHHHHHIH", 1, 4, 0, 0, 0, 0, 1, 1, 2, 2))
 
 
@@ -59,6 +59,22 @@ class ArtifactTests(unittest.TestCase):
             wrong = {"minecraft": {**lock["minecraft"], "server_mappings_sha1": "0" * 40}}
             with self.assertRaisesRegex(ValueError, "do not match lock"):
                 lab.download_mappings(manifest, Path(temp), wrong)
+
+    @unittest.skipUnless(os.environ.get("HORIZON_TEST_REMAPPER"), "needs the pinned remapper jar")
+    def test_remapped_jar_is_named_and_byte_identical_on_a_rerun(self):
+        tool = Path(os.environ["HORIZON_TEST_REMAPPER"])
+        java = os.environ.get("HORIZON_TEST_JAVA", "java")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, mapping, output = root / "input.jar", root / "mappings.txt", root / "output.jar"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("a.class", minimal_class("Named.java", "a"))
+            mapping.write_text("demo.Named -> a:\n", encoding="utf-8")
+            _, first = lab.remap_jar(java, tool, source, mapping, output)
+            with zipfile.ZipFile(output) as archive:
+                self.assertIn("demo/Named.class", archive.namelist())
+            _, second = lab.remap_jar(java, tool, source, mapping, output)
+            self.assertEqual(first, second)
 
     def test_download_rejects_corruption_without_overwriting_existing_file(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -460,4 +476,3 @@ class VarIntTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
