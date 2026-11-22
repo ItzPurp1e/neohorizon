@@ -1,12 +1,13 @@
 # Известные gaps и блокеры
 
-## Окружение Stage A
+## Исходные failures Stage A
 
-- **OPEN — protocol suite stack overflow:** `cargo test --locked -p horizon-protocol` завершает тестовый процесс с Windows `STATUS_STACK_OVERFLOW`. Требуется изолировать тест на Linux/другой конфигурации и проверить размер тестового стека.
-- **OPEN — Windows filesystem permissions:** 3 world tests падают `PermissionDenied` в сценариях stranded MCC upgrade; вероятно связано с Windows file replacement/permissions. Повторить на Linux и выяснить ожидаемое поведение Windows.
-- **OPEN — Python/pr_ready result:** `pr_ready.py` прошёл предварительные gates, но Python suite на текущем этапе не выдал финальную сводку. Предыдущие неполные прогоны имеют ошибки/ограничения harness и не считаются baseline.
-- **VERIFIED — checkout/toolchain:** точный source SHA и 73 workspace members; Rust CI pin 1.99.1, minimum 1.95; локальные portable toolchain-компоненты подготовлены.
-- **VERIFIED — client baseline:** клиентские тесты прошли (1,955 library + 16 integration).
+- **CONFIRMED — protocol stack overflow:** `item::tests::deeply_nested_bundles_still_decode` аварийно завершает test binary с `STATUS_STACK_OVERFLOW`; повтор с `RUST_MIN_STACK=16777216` падает так же. Это воспроизводимое состояние исходного commit.
+- **CONFIRMED ON WINDOWS — MCC permission errors:** три `horizon-world` stranded MCC upgrade tests завершаются `PermissionDenied` (Windows error 5), изолированный повтор воспроизводит их. Требуется Linux baseline для выяснения платформенной области.
+- **CONFIRMED ON WINDOWS — Python suite failures:** standalone suite — 53 failures/16 errors/175 skipped; из `pr_ready` — 53/15/175. Ошибка в числе errors между запусками — один случай нестабильности. В выводе есть POSIX/Unix runner assumptions (`tee` отсутствует в MinGit, ожидаются slash paths, некоторые скрипты используют Unix-команды), но все оставшиеся падения ещё не классифицированы по одному.
+- **PASS — shared pr_ready gates:** public tree, repository hygiene, layers, addresses, export lists и test stand-ins. `pr_ready` exit 1 только из-за Python suite; scope — 0 changed files.
+- **PASS — client baseline:** 1,955 library и 16 integration tests.
+- **VERIFIED — checkout/toolchain:** точный source SHA и 73 workspace members; Rust CI pin 1.99.1, minimum 1.95; переносимое локальное окружение.
 
 ## Технические gaps бэкпорта (предварительные)
 
