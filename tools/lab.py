@@ -308,6 +308,28 @@ def mapping_pins_match(lock, manifest):
                and game.get(f"{side}_mappings_sha1") is not None for side in sides)
 
 
+def download_mappings(manifest, directory, lock=None):
+    """Cache both official mapping files, checking their SHA-1 before use."""
+    downloads = manifest.get("downloads", {})
+    sides = ("client", "server")
+    if not any(f"{side}_mappings" in downloads for side in sides):
+        return {}
+    if lock is not None and not mapping_pins_match(lock, manifest):
+        raise ValueError("Manifest mappings do not match lock file")
+    if not all(f"{side}_mappings" in downloads for side in sides):
+        raise ValueError("The version JSON must contain both client and server mappings")
+    paths = {}
+    for side in sides:
+        entry = downloads[f"{side}_mappings"]
+        checksum, url = entry.get("sha1"), entry.get("url")
+        if not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-f]{40}", checksum):
+            raise ValueError(f"Invalid {side} mappings SHA-1")
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise ValueError(f"Invalid {side} mappings URL")
+        paths[side] = download(url, directory / "mappings" / f"{side}.txt", checksum)
+    return paths
+
+
 def import_manifest(lock, directory, minecraft=None):
     """The pinned version JSON, from the launcher's versions/ directory.
 
@@ -589,7 +611,8 @@ def prepare(minecraft=None, server_jar=None):
     lock, directory = config()
     manifest, client = import_client(lock, directory, minecraft)
     if "client_mappings" in manifest["downloads"] or "server_mappings" in manifest["downloads"]:
-        raise ValueError("This workflow targets unobfuscated releases. Older releases need a remapping stage.")
+        download_mappings(manifest, directory, lock)
+        raise ValueError("Verified mappings were cached; older releases still need a JAR remapping stage.")
     print(f"Imported client {manifest['id']} from {minecraft_dir(minecraft)}", flush=True)
     jars = {"client": client, "server": import_server(lock, directory, server_jar)}
     jars["server"], server_libraries = unpack_server(jars["server"], directory, manifest["id"])
