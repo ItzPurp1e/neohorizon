@@ -16,8 +16,8 @@ E + F + G → H gameplay parity → I native mods → J stabilization/release
 
 | Этап | Результат / критерий выхода | Статус |
 |---|---|---|
-| A. Baseline и аудит | Точный checkout, toolchain/workspace snapshot, baseline logs, аудит-документы | IN PROGRESS; baseline BLOCKED |
-| B. Старые obfuscated JAR | Проверяемый remap client/server, mapping SHAs, единый pipeline для `horizon-prepare`, `lab.py`, `version_port.py`, повторяемые exporters/datagen | NOT STARTED |
+| A. Baseline и аудит | Точный checkout, toolchain/workspace snapshot, baseline logs, аудит-документы | COMPLETE; исходные failures записаны |
+| B. Старые obfuscated JAR | Проверяемый remap client/server, mapping SHAs, единый pipeline для `horizon-prepare`, `lab.py`, `version_port.py`, повторяемые exporters/datagen | IN PROGRESS; проверка SHA mappings в lock/manifest |
 | C. Version pin | Lock на 1.21.1, генератор констант и data tables для 767/3955, guard от активных 26.3 таблиц | NOT STARTED |
 | D. Registries/data | Полные и детерминированные 1.21.1 registries, integrity checks, без молчаливых alias неизвестных ID | NOT STARTED |
 | E. Protocol 767 | Полная native wire реализация status/login/config/play и malformed packet behavior; двусторонние vanilla сценарии | NOT STARTED |
