@@ -210,8 +210,9 @@ def prepare_download(version, directory):
     if not (version_json.exists() and lab.digest(version_json, "sha1") == entry["sha1"]):
         version_json.write_bytes(fetch_json(entry["url"], entry["sha1"]))
     meta = json.loads(version_json.read_text())
-    if "client_mappings" in meta["downloads"]:
-        raise SystemExit(f"{version} is obfuscated; the pipeline handles unobfuscated releases (26.1 and later)")
+    if "client_mappings" in meta["downloads"] or "server_mappings" in meta["downloads"]:
+        lab.download_mappings(meta, directory)
+        raise SystemExit(f"{version} mappings are verified and cached; JAR remapping is not yet available")
     jars = directory / "jars"
     found = {"version_json": version_json}
     for side in ["client", "server"]:
@@ -762,3 +763,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
