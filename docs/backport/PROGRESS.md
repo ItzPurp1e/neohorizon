@@ -7,7 +7,7 @@
 - Этап A: **COMPLETE**; точный source commit, Windows toolchain и результаты всех пяти обязательных baseline-команд зафиксированы в `TEST_MATRIX.md`.
 - Baseline выявил исходные тестовые сбои: protocol stack overflow, три Windows MCC `PermissionDenied`, Python suite failures; клиентский пакет проходит.
 - `tools/pr_ready.py`: подготовительные gates проходят; итог команды exit 1 из-за Python suite, результаты записаны.
-- Этап B: **IN PROGRESS**; в Python и Rust import path добавлена проверка `client_mappings_sha1`/`server_mappings_sha1` относительно manifest. Пустые или несовпадающие pins отклоняются; remapper и 1.21.1 assets ещё не подключены.
+- Этап B: **IN PROGRESS**; в Python и Rust import path добавлена проверка `client_mappings_sha1`/`server_mappings_sha1` относительно manifest. `lab.py` и `version_port.py` теперь сохраняют обе official mappings в локальном кеше только после проверки SHA-1. JAR remapper и импорт mappings в `horizon-prepare` ещё не подключены.
 - Этапы C–J: **NOT STARTED**.
 
 ## Выполнено
@@ -24,5 +24,5 @@
 
 ## Следующий шаг
 
-Подключить один проверяемый remapper для client/server JAR к `horizon-prepare`, `lab.py` и `version_port.py`; сохранить mapping и output SHA в `.local`, проверить повторяемость. Исходные baseline failures остаются в `KNOWN_GAPS.md`.
+Подключить один проверяемый remapper для client/server JAR к `horizon-prepare`, `lab.py` и `version_port.py`; сохранить output SHA в `.local`, проверить повторяемость. Исходные baseline failures остаются в `KNOWN_GAPS.md`.
 
