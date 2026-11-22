@@ -4,28 +4,23 @@
 
 ## Текущий статус
 
-- Этап A: **PARTIAL**; GitHub repo и source SHA известны, аудитная документация заведена.
-- Локальный baseline: **BLOCKED** из-за отсутствия checkout, Git и Rust toolchain.
+- Этап A: **PARTIAL**; аудит зафиксирован на source commit `aaa14aa26e4597ee8f18715552c5fe5d6078ac21`, точный checkout и переносимое окружение подготовлены.
+- Rust baseline: клиентские тесты прошли; protocol и world имеют выявленные падения, см. `TEST_MATRIX.md`.
+- Python suite и `tools/pr_ready.py`: прогон `pr_ready` выполняется; предыдущие попытки Python suite завершались ошибками окружения, полный прогон пока не имеет итогового сводного отчёта.
 - Этапы B–J: **NOT STARTED**.
 
-## Выполнено в этой итерации
+## Выполнено
 
-- Зафиксирован исходный commit `aaa14aa26e4597ee8f18715552c5fe5d6078ac21` и целевые параметры из инструкции.
-- Проверено локальное окружение: `D:\Projects\NeoHorizon` содержит план; команды Git/Cargo/Rust/Java не обнаружены.
-- Подготовлены `00_AUDIT.md`, `01_VERSION_DIFF.md`, `02_IMPLEMENTATION.md`, `TEST_MATRIX.md`, `KNOWN_GAPS.md`.
-- Документы Stage A сохранены и проверены повторным чтением в удалённой ветке `backport/1.21.1-stage-a`, созданной от исходного SHA.
-- По удалённым исходникам уточнены 73 workspace member entries, edition 2024/minimum Rust 1.95, version constants 26.3/777/5023/Java 25 и блокировки remap в `tools/lab.py` и `tools/version_port.py`.
-- Все пять обязательных baseline-команд предприняты; окружение не позволило запустить тестовые процессы. Результаты записаны как BLOCKED, не PASS/FAIL.
+- Подготовлен точный checkout в `_checkout` на зафиксированном source SHA; файлы исходного проекта находятся в `_upstream_source`.
+- Подготовлены локальные Python 3.12.10, Rust 1.99.1 (CI pin), Rust 1.95.0, MinGit, MSVC и SDK компоненты. Системная конфигурация не менялась.
+- Зафиксированы Windows 11 build `10.0.26300.0`, PowerShell 5.1, Cargo workspace из 73 members; edition 2024 и минимальный Rust 1.95.
+- `cargo test --locked -p horizon-client --lib --bins --tests`: PASS; 1,955 library tests и 16 integration tests passed.
+- `cargo test --locked -p horizon-core -p horizon-world`: core 214 passed и дополнительный бинарь 9 passed; world 793 passed, 3 failed, 22 ignored. Все три ошибки `PermissionDenied` в stranded MCC upgrade tests на Windows.
+- `cargo test --locked -p horizon-protocol`: процесс падает с Windows `STATUS_STACK_OVERFLOW` при запуске тестов; точный тест и окружение нужно исследовать отдельно.
+- Запущен `python3 tools/pr_ready.py`: прошли public tree, repository hygiene, layers, addresses, export lists и test stand-ins; Python tests выполняются.
+- Обновлённые документы Stage A находятся в `docs/backport/` и на ветке `backport/1.21.1-stage-a`, не в `main`.
 
-## Не выполнено
+## Следующий шаг
 
-- Checkout точного SHA в локальную папку.
-- Снятие точных workspace members, toolchain versions и OS build metadata.
-- Пять команд baseline и фиксация stdout/stderr/exit codes.
-- Подтверждение предварительных технических findings на локальных исходниках.
-- Локальная синхронизация audit-документов с GitHub branch (workspace пока не является checkout).
-
-## Следующий ограниченный шаг
-
-Подготовить доступный локальный checkout точного source SHA и Rust/Python окружение, затем завершить Stage A повторным запуском исходной baseline матрицы без изменений кода.
+Получить итог `pr_ready.py`/Python suite, сохранить фактические логи и exit codes, затем отделить подтверждённые исходные ошибки от ограничений Windows/окружения. После этого завершить аудит Stage A перед началом изменений для 1.21.1.
 
