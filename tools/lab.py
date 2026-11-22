@@ -297,6 +297,17 @@ def manifest_accepted(lock, checksum):
     return checksum == game["manifest_sha1"] or checksum in game.get("accepted_manifest_sha1", [])
 
 
+def mapping_pins_match(lock, manifest):
+    """An obfuscated release must pin both official mapping files in the version lock."""
+    game = lock["minecraft"]
+    downloads = manifest.get("downloads", {})
+    sides = ("client", "server")
+    if not any(f"{side}_mappings" in downloads or f"{side}_mappings_sha1" in game for side in sides):
+        return True
+    return all(downloads.get(f"{side}_mappings", {}).get("sha1") == game.get(f"{side}_mappings_sha1")
+               and game.get(f"{side}_mappings_sha1") is not None for side in sides)
+
+
 def import_manifest(lock, directory, minecraft=None):
     """The pinned version JSON, from the launcher's versions/ directory.
 
@@ -311,7 +322,8 @@ def import_manifest(lock, directory, minecraft=None):
         downloads = manifest.get("downloads", {})
         if (manifest.get("id") != version
                 or downloads.get("client", {}).get("sha1") != game["client_sha1"]
-                or downloads.get("server", {}).get("sha1") != game["server_sha1"]):
+                or downloads.get("server", {}).get("sha1") != game["server_sha1"]
+                or not mapping_pins_match(lock, manifest)):
             raise ValueError(f"{source} does not describe the pinned {version} release")
         checksum = digest(source, "sha1")
         if not manifest_accepted(lock, checksum):
@@ -325,6 +337,8 @@ def import_manifest(lock, directory, minecraft=None):
     manifest = json.loads(destination.read_text(encoding="utf-8"))
     if manifest["javaVersion"]["majorVersion"] != game["java_major"]:
         raise ValueError("Manifest Java version does not match lock file")
+    if not mapping_pins_match(lock, manifest):
+        raise ValueError("Manifest mappings do not match lock file")
     return manifest
 
 
@@ -705,3 +719,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
