@@ -28,6 +28,20 @@ def minimal_class(source="Example.java"):
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_old_release_requires_both_pinned_mapping_checksums(self):
+        lock = {"minecraft": {"client_mappings_sha1": "a" * 40,
+                              "server_mappings_sha1": "b" * 40}}
+        manifest = {"downloads": {"client_mappings": {"sha1": "a" * 40},
+                                  "server_mappings": {"sha1": "b" * 40}}}
+        self.assertTrue(lab.mapping_pins_match(lock, manifest))
+        self.assertFalse(lab.mapping_pins_match(lock, {"downloads": {
+            **manifest["downloads"], "server_mappings": {"sha1": "c" * 40}}}))
+        self.assertFalse(lab.mapping_pins_match(lock, {"downloads": {
+            "client_mappings": manifest["downloads"]["client_mappings"]}}))
+        self.assertFalse(lab.mapping_pins_match({"minecraft": {}}, manifest))
+        self.assertFalse(lab.mapping_pins_match({"minecraft": {}}, {"downloads": {"client_mappings": {}}}))
+        self.assertTrue(lab.mapping_pins_match({"minecraft": {}}, {"downloads": {}}))
+
     def test_download_rejects_corruption_without_overwriting_existing_file(self):
         with tempfile.TemporaryDirectory() as temp:
             destination = Path(temp) / "game.jar"
@@ -428,3 +442,4 @@ class VarIntTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
