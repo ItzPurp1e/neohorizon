@@ -610,12 +610,14 @@ def inventory(jar):
 def prepare(minecraft=None, server_jar=None):
     lock, directory = config()
     manifest, client = import_client(lock, directory, minecraft)
-    if "client_mappings" in manifest["downloads"] or "server_mappings" in manifest["downloads"]:
+    legacy = "client_mappings" in manifest["downloads"] or "server_mappings" in manifest["downloads"]
+    if legacy:
         download_mappings(manifest, directory, lock)
-        raise ValueError("Verified mappings were cached; older releases still need a JAR remapping stage.")
     print(f"Imported client {manifest['id']} from {minecraft_dir(minecraft)}", flush=True)
     jars = {"client": client, "server": import_server(lock, directory, server_jar)}
     jars["server"], server_libraries = unpack_server(jars["server"], directory, manifest["id"])
+    if legacy:
+        raise ValueError("Verified client/server JARs and mappings were cached; JAR remapping is not yet available.")
     client_libraries = [import_library(artifact, directory / "libraries" / "client", minecraft)
                         for artifact in client_library_artifacts(manifest)]
     vf = lock["vineflower"]
