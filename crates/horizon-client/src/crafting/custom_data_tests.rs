@@ -141,7 +141,7 @@ fn ingredient_depth_128_matches_clones_and_drops_on_two_mib_stack() {
 #[ignore = "daily"]
 fn vanilla_recipe_corpus_preserves_ingredient_membership_and_order() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../.local/horizon-client/26.3/data/minecraft/recipe");
+        .join("../../.local/horizon-client/1.21.1/data/minecraft/recipe");
     let mut checked = 0;
     for entry in std::fs::read_dir(root).unwrap() {
         let entry = entry.unwrap();

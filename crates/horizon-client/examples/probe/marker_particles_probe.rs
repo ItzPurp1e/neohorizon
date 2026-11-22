@@ -65,7 +65,7 @@ fn column_offset(x: i32, z: i32) -> [f64; 3] {
 
 pub fn main() -> Result<()> {
     let args: Vec<String> = crate::args().collect();
-    let root = Path::new(".local/horizon-client/26.3");
+    let root = Path::new(".local/horizon-client/1.21.1");
     let assets = Assets::load(root)?;
     let facts = BlockFacts::load(root, assets.registry)?;
     let biomes = Biomes::load(&horizon_assets::resource_source::ResourceRoot::directory(

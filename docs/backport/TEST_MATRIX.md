@@ -12,7 +12,9 @@ Baseline source SHA: `aaa14aa26e4597ee8f18715552c5fe5d6078ac21`. Host: Windows 1
 | B-01 | `tools/version_port.py prepare 1.21.1 -j 4`, затем повтор той же команды | Официальные mappings/JAR прошли checksum verification; ART 2.0.18 remapped client/server с `--reverse --strip-sigs`; vanilla datagen создал 5 reports; 8,269 классов и 67,713 методов проиндексированы. Два настоящих legacy exporters скомпилированы/запущены. Повтор совпал с кэшем: client JAR SHA-256 `8446d377…a503`, server JAR `d81946eb…b9d5`, gameplay exporter `7e013ec2…5010`, entity exporter `bed842d5…c9d2`. | PASS |
 | B-02 | `python3 -m unittest discover -s tests -p test_lab.py` с pinned ART/JRE 21 | 28 passed; реальный fixture дважды remapped obfuscated class `a` в `demo/Named`, результаты byte-identical. | PASS |
 | B-03 | `cargo test --locked --offline -p horizon-prepare` | Library: 56 passed, 14 ignored daily; CLI: 2 passed; 0 failed. | PASS |
-| C-01 | Generated version constants | Не запускалось. | NOT STARTED |
+| C-01 | `python3 -m unittest tests.test_gen_version_consts tests.test_version_port tests.test_port_regen tests.test_backport_version_tables` | 32 passed; lock/version constants, pin workflow и markers всех пяти generated tables согласованы с 1.21.1; активных Rust resource paths `horizon-client/26.3` нет. | PASS |
+| C-02 | 1.21.1 generator chain: version, packets report, decompiled EntityType, Java command oracle, Rust command-tree comparison | Сгенерированы protocol 767 IDs, 130 entity rows, 208 command-order nodes, 145 suggestion nodes и 28 vanilla/Horizon order rows. | PASS |
+| C-03 | `cargo build -p horizon-client-lib --example client_probe` после финальной 1.21.1 packet table | 121 compile error: 26.3 packet structs/adapters ссылаются на пакеты, отсутствующие в protocol 767. Зафиксировано как вход Stage E, не маскируется старой active table. | EXPECTED FAIL (Stage E boundary) |
 | E–J | Interop, assets, save roundtrip, gameplay, native mod, release gates | Не запускалось; эти проверки относятся к последующим этапам. | NOT STARTED |
 
 ### Классификация ограничений

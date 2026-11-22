@@ -2478,7 +2478,7 @@ mod tests {
         assert_eq!((plain.health, plain.absorption), (3.5, 0.0));
     }
 
-    /// Needs the prepared data in `.local/horizon-client/26.3`; skipped
+    /// Needs the prepared data in `.local/horizon-client/1.21.1`; skipped
     /// without it.
     #[test]
     fn the_native_damage_hook_changes_or_cancels_a_players_hit() {

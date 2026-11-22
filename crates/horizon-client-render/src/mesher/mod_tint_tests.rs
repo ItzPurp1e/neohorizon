@@ -14,7 +14,7 @@ pub(super) fn resources() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../.local/horizon-client/26.3")
+                .join("../../.local/horizon-client/1.21.1")
         });
     root.join("horizon-resources.json").exists().then_some(root)
 }

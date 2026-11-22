@@ -14,7 +14,8 @@
 - **CLOSED in Stage B — old JAR remap:** `horizon-prepare`, `lab.py` и `version_port.py` используют один pinned ART pipeline; mappings, исходные JAR и outputs проверяются, реальный 1.21.1 datagen и повторяемость подтверждены.
 - **OPEN for later data/render stages — full exporter API port:** Stage B подтверждает named JAR двумя реальными registry/gameplay exporters. Остальные exporter-исходники всё ещё используют API 26.3 (model/tag/heightmap/level interfaces) и должны получить 1.21.1 реализации при переносе соответствующих data/render подсистем; это не блокирует remap/import pipeline.
 - **OPEN — protocol adapter completeness:** source comments указывают на legacy recipe book, explosion layout, cursor/inventory packets, entity position sync и serializer IDs. Проверить также relative teleport/velocity, vehicle/player input и направления mappings по полным packet tables и oracle.
-- **OPEN — runtime generation:** 26.3 constants/data tables ещё не переключены на 1.21.1.
+- **CLOSED in Stage C — runtime generation:** version constants, packet IDs, entity tracking и command tables переключены на 1.21.1; guard запрещает возврат generated tables и resource paths к 26.3.
+- **OPEN for Stage E — native packet surface:** после активации packet IDs protocol 767 текущие packet structs и multi-version adapters, написанные для 26.3, ссылаются на отсутствующие в 1.21.1 пакеты. `cargo build -p horizon-client-lib --example client_probe` останавливается на 121 таком compile error. Это ожидаемая явная граница: IDs уже 1.21.1, layouts/dispatch будут перенесены в Stage E.
 - **OPEN — registries/data:** полный versioned diff и генерация 1.21.1 не проведены.
 - **OPEN — assets:** совместимость legacy item model JSON/overrides и весь ресурсный набор не проверены.
 - **OPEN — saves/worldgen/gameplay/native mods:** parity не подтверждена.

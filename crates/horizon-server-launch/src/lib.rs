@@ -355,7 +355,7 @@ mod tests {
         let program = Path::new("/opt/horizon/target/release/horizon-client");
         let found = resource_candidates(&config, dir, Some(program));
         assert_eq!(found[0], Path::new("/srv/mc/resources"));
-        assert!(found.contains(&PathBuf::from("/opt/horizon/.local/horizon-client/26.3")));
+        assert!(found.contains(&PathBuf::from("/opt/horizon/.local/horizon-client/1.21.1")));
         config.engine.resources = "/data/res".into();
         assert_eq!(
             resource_candidates(&config, dir, Some(program)),
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn resources_prepared_without_sounds_are_found() {
         let root = std::env::temp_dir().join(format!("horizon-server-res-{}", std::process::id()));
-        let prepared = root.join(".local/horizon-client/26.3");
+        let prepared = root.join(".local/horizon-client/1.21.1");
         std::fs::create_dir_all(&prepared).unwrap();
         let program = root.join("horizon-client");
         let config = Config::default();

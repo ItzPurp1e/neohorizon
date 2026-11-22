@@ -69,7 +69,7 @@ fn dfa_baseline_recipe_placement() {
     });
     assert!(
         ran,
-        "requires prepared resources in HORIZON_TEST_RESOURCES or .local/horizon-client/26.3"
+        "requires prepared resources in HORIZON_TEST_RESOURCES or .local/horizon-client/1.21.1"
     );
 }
 
@@ -108,6 +108,6 @@ fn dfa_baseline_recipe_take_consumes_one_per_cell() {
     });
     assert!(
         ran,
-        "requires prepared resources in HORIZON_TEST_RESOURCES or .local/horizon-client/26.3"
+        "requires prepared resources in HORIZON_TEST_RESOURCES or .local/horizon-client/1.21.1"
     );
 }

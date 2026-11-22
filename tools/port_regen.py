@@ -32,8 +32,11 @@ try:
 except ImportError:
     import lab
 
-# Classes whose decompiled source a generator parses: (side, class).
-SOURCES = [("client", "net/minecraft/world/entity/EntityTypes")]
+# Classes whose decompiled source a generator parses: (side, alternative class
+# names, newest first). Entity registrations moved from EntityType in 1.21.1
+# to EntityTypes in later releases.
+SOURCES = [("client", ("net/minecraft/world/entity/EntityTypes",
+                       "net/minecraft/world/entity/EntityType"))]
 PARITY = "mods/horizon/src/test/java/dev/horizonlab/parity"
 
 
@@ -58,16 +61,23 @@ def pinned_lock(lock, manifest, manifest_sha1):
     """research-lock.json pinned to the version this manifest describes. The same version keeps its block (and
     the republished version JSONs it accepts); another version gets a new one."""
     game = lock["minecraft"]
+    downloads = manifest["downloads"]
+    mapping_pins = {
+        f"{side}_mappings_sha1": downloads[f"{side}_mappings"]["sha1"]
+        for side in ("client", "server") if f"{side}_mappings" in downloads
+    }
     same = (game["version"] == manifest["id"]
             and manifest_sha1 in [game["manifest_sha1"], *game.get("accepted_manifest_sha1", [])]
-            and game["client_sha1"] == manifest["downloads"]["client"]["sha1"]
-            and game["server_sha1"] == manifest["downloads"]["server"]["sha1"])
+            and game["client_sha1"] == downloads["client"]["sha1"]
+            and game["server_sha1"] == downloads["server"]["sha1"]
+            and all(game.get(key) == value for key, value in mapping_pins.items()))
     if same:
         return lock
     return {**lock, "minecraft": {
         "version": manifest["id"], "manifest_sha1": manifest_sha1,
-        "client_sha1": manifest["downloads"]["client"]["sha1"],
-        "server_sha1": manifest["downloads"]["server"]["sha1"],
+        "client_sha1": downloads["client"]["sha1"],
+        "server_sha1": downloads["server"]["sha1"],
+        **mapping_pins,
         "java_major": manifest["javaVersion"]["majorVersion"],
     }}
 
@@ -186,15 +196,21 @@ def decompile_classes(root, version, store):
     lock = json.loads((root / "research-lock.json").read_text())
     vineflower = root / ".local" / "tools" / f"vineflower-{lock['vineflower']['version']}.jar"
     prepared = json.loads((root / ".local" / "minecraft" / version / "prepared.json").read_text())
-    for side, name in SOURCES:
+    for side, names in SOURCES:
         output = store / "sources" / side
-        if (output / f"{name}.java").exists():
+        existing = next((name for name in names if (output / f"{name}.java").exists()), None)
+        if existing:
             continue
         jar = root / prepared["jars"][side]
         with tempfile.TemporaryDirectory(prefix=".decompile-", dir=store) as scratch:
             scratch = Path(scratch)
             small = scratch / "classes.jar"
             with zipfile.ZipFile(jar) as full, zipfile.ZipFile(small, "w") as out:
+                entries = set(full.namelist())
+                name = next((candidate for candidate in names
+                             if f"{candidate}.class" in entries), None)
+                if name is None:
+                    raise ValueError(f"none of {names} exists in {jar}")
                 for entry in full.namelist():
                     if entry == f"{name}.class" or (entry.startswith(f"{name}$") and entry.endswith(".class")):
                         out.writestr(entry, full.read(entry))
@@ -227,6 +243,12 @@ def classpaths(root, version):
 
 def gen_suggestions(root, version, store, build):
     client = classpaths(root, version)["client"]
+    if version == "1.21.1":
+        source = root / PARITY / "VanillaCommandTree1211Exporter.java"
+        classes = compile_oracle(root, version, client, [source], build / "suggestions")
+        run(["java", "-Xmx1G", "-cp", os.pathsep.join(map(str, [classes, *client])),
+             "dev.horizonlab.parity.VanillaCommandTree1211Exporter", build / "suggestions"], build)
+        return [python(), "tools/generate_command_suggestions.py", build / "suggestions/suggestions.tsv"]
     classes = compile_oracle(root, version, client, [root / PARITY / "VanillaCommandSuggestionsExporter.java"],
                              build / "suggestions")
     tsv = build / "suggestions.tsv"
@@ -238,10 +260,14 @@ def gen_suggestions(root, version, store, build):
 def gen_vanilla_order(root, version, store, build):
     """vanilla's tree (the command-parse oracle's export) against Horizon's (command_parse_fixture tree)."""
     server = classpaths(root, version)["server"]
-    classes = compile_oracle(root, version, server, [root / PARITY / "VanillaCommandParseOracle.java"],
-                             build / "parse")
-    run(["java", "-Xmx1G", "-cp", os.pathsep.join(map(str, [classes, *server])),
-         "dev.horizonlab.parity.VanillaCommandParseOracle", "tree", build], build)
+    source = ("VanillaCommandTree1211Exporter.java" if version == "1.21.1"
+              else "VanillaCommandParseOracle.java")
+    classes = compile_oracle(root, version, server, [root / PARITY / source], build / "parse")
+    if version == "1.21.1":
+        command = ["dev.horizonlab.parity.VanillaCommandTree1211Exporter", build]
+    else:
+        command = ["dev.horizonlab.parity.VanillaCommandParseOracle", "tree", build]
+    run(["java", "-Xmx1G", "-cp", os.pathsep.join(map(str, [classes, *server])), *command], build)
     env = dict(os.environ, CARGO_TARGET_DIR=str(root / ".local" / "port-target"))
     jobs = os.environ.get("FLEET_LOAD_JOBS")
     run(["cargo", "build", "-p", 'horizon-client-lib', "--example", "client_probe",

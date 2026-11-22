@@ -100,6 +100,18 @@ def verify_artifacts():
             if lab.digest(library, "sha256") != checksum:
                 raise ValueError(f"Dependency checksum changed: {relative}")
             libraries.append(library)
+    # Releases that publish official mappings are compiled against the
+    # deterministic named jars produced by prepare, never the obfuscated
+    # originals. Their hashes are part of prepared.json and are rechecked here
+    # before any Java oracle sees them.
+    if "client_mappings_sha1" in lock["minecraft"] or "server_mappings_sha1" in lock["minecraft"]:
+        prepared = json.loads((directory / "prepared.json").read_text())
+        for side in ("client", "server"):
+            remapped = lab.ROOT / prepared["jars"][side]
+            expected = prepared["remapped_sha256"][side]
+            if lab.digest(remapped, "sha256") != expected:
+                raise ValueError(f"{side} remapped artifact checksum changed; run tools/lab.py prepare")
+            jars[side] = remapped
     return lock, jars, libraries
 
 

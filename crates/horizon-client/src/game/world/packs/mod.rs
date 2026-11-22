@@ -1043,7 +1043,7 @@ mod tests {
     fn resource_pack_overrides_mod_and_vanilla() {
         use std::fs;
         let vanilla =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client/26.3");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client/1.21.1");
         assert!(
             vanilla.join("facts.json").is_file(),
             "prepared vanilla data required"

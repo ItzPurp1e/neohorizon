@@ -706,7 +706,7 @@ mod tests {
         std::fs::create_dir_all(data.join("run-leases")).unwrap();
         let install = data.join("server-runtime/releases/v1");
         std::fs::create_dir_all(&install).unwrap();
-        std::fs::create_dir_all(data.join("server-runtime/game-files/horizon-client/26.3"))
+        std::fs::create_dir_all(data.join("server-runtime/game-files/horizon-client/1.21.1"))
             .unwrap();
         let server = data.join("servers/survival");
         std::fs::create_dir_all(&server).unwrap();
@@ -721,7 +721,7 @@ mod tests {
         let (install, server, _data) = managed(&root);
         let program = install.join("horizon-client.exe");
         std::fs::write(&program, "game").unwrap();
-        let resources = root.join("data/server-runtime/game-files/horizon-client/26.3");
+        let resources = root.join("data/server-runtime/game-files/horizon-client/1.21.1");
         let command = horizon_server_launch::command(&program, &resources, &server, false).unwrap();
         // An update switches `current` to a release nobody prepared: the start prepares it.
         let claims = lease(&program, &command, &server).unwrap();

@@ -8,7 +8,8 @@
 - Baseline выявил исходные тестовые сбои: protocol stack overflow, три Windows MCC `PermissionDenied`, Python suite failures; клиентский пакет проходит.
 - `tools/pr_ready.py`: подготовительные gates проходят; итог команды exit 1 из-за Python suite, результаты записаны.
 - Этап B: **COMPLETE**; единый pinned AutoRenamingTool 2.0.18 подключён к `horizon-prepare`, `lab.py` и `version_port.py`. Официальные mappings, исходные JAR и remapped outputs проверяются по SHA, подписи исходных JAR удаляются штатным `--strip-sigs`, а повторный remap обязан дать тот же SHA-256.
-- Этапы C–J: **NOT STARTED**.
+- Этап C: **COMPLETE**; lock и generated version/packet/entity/command tables переключены на 1.21.1, resource/data paths используют каталог `1.21.1`, добавлен автоматический guard против активных таблиц и путей 26.3.
+- Этапы D–J: **NOT STARTED**.
 
 ## Выполнено
 
@@ -25,8 +26,12 @@
 - На named server JAR реально скомпилированы и дважды запущены содержательные vanilla exporters: `VanillaGameplayFactsExporter` и `VanillaEntityTypesExporter`. Повторные SHA-256 совпали: `7e013ec2…5010` и `bed842d5…c9d2`.
 - Повторный полный remap дал те же SHA-256: client `8446d3777e7a524b425e9b22a2e3fd3878dd2ef61cff62f1ef8817da8632a503`, server `d81946eb2b6f01f93ecba298ac54b0ac8bcf21dfa61601a94d0d39005e36b9d5`.
 - Проверки Stage B: 28/28 `test_lab.py`, 56/56 активных unit tests `horizon-prepare` и 2/2 CLI tests прошли; 14 заранее помеченных daily Rust tests не запускались.
+- `version.rs` сгенерирован из client JAR 1.21.1: protocol 767, DataVersion 3955, resource pack 34.0, data pack 48.0, Java 21.
+- Из официальных 1.21.1 reports/source сгенерированы packet IDs, 130 entity tracking rows, 208 command-order nodes, 145 suggestion nodes и 28 различий порядка дерева Horizon/vanilla.
+- Для 1.21.1 добавлен минимальный Java command-tree oracle, не зависящий от API registries/permissions 26.3. Пять generated tables содержат машинный `GENERATED_FOR_VERSION`, который проверяется тестом.
+- 32 целевых Python-теста Stage C проходят. Финальная таблица packet IDs намеренно выявляет 121 compile error в пока ещё 26.3 packet structs/adapters; их перенос относится к сетевому этапу E и записан в `KNOWN_GAPS.md`.
 
 ## Следующий шаг
 
-Начать этап C: закрепить Minecraft 1.21.1 и Java 21 в version lock, затем регенерировать version-dependent constants/tables поверх уже проверенного Stage B pipeline. Исходные baseline failures остаются в `KNOWN_GAPS.md`.
+Начать этап D: перенести игровые данные и registries на generated reports/resources 1.21.1. Сетевые compile errors после активации packet IDs 767 остаются явно открыты до этапа E.
 

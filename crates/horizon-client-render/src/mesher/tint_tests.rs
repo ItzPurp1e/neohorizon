@@ -7,7 +7,7 @@ fn biomes() -> Biomes {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../.local/horizon-client/26.3")
+                .join("../../.local/horizon-client/1.21.1")
         });
     Biomes::load(&horizon_assets::resource_source::ResourceRoot::directory(
         root.to_path_buf(),

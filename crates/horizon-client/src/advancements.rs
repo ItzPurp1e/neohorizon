@@ -2728,7 +2728,7 @@ mod tests {
     #[test]
     fn uh_oh_accepts_either_tnt_event_only_for_adult_sulfur_cubes() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-            "../../.local/horizon-client/26.3/data/minecraft/advancement/husbandry/uh_oh.json",
+            "../../.local/horizon-client/1.21.1/data/minecraft/advancement/husbandry/uh_oh.json",
         );
         if !path.exists() {
             return;

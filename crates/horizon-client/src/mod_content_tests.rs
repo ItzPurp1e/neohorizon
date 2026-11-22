@@ -1088,8 +1088,8 @@ fn prepared() -> Option<PathBuf> {
     }
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     [
-        manifest.join("../../.local/horizon-client/26.3"),
-        manifest.join("../../../../.local/horizon-client/26.3"),
+        manifest.join("../../.local/horizon-client/1.21.1"),
+        manifest.join("../../../../.local/horizon-client/1.21.1"),
     ]
     .into_iter()
     .find(|root| root.join("gameplay-facts.json").exists())

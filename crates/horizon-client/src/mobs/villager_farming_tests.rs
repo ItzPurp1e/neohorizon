@@ -9,7 +9,7 @@ fn resources() -> &'static std::path::Path {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
     ROOT.get_or_init(|| {
         let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../.local/horizon-client/26.3");
+            .join("../../.local/horizon-client/1.21.1");
         let scratch = std::env::temp_dir().join(format!("fresh-farming-{}", std::process::id()));
         let dir = scratch.join("mod");
         let mut files = vec![(

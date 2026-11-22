@@ -9,7 +9,7 @@ fn fixture(template: &str, sounds: serde_json::Value, run: impl FnOnce(&MobWorld
     let base = std::env::var_os("HORIZON_TEST_RESOURCES")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client/26.3")
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client/1.21.1")
         });
     if !base.join("entity-types.json").exists() {
         assert!(

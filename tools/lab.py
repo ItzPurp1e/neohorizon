@@ -52,6 +52,23 @@ def version_info(client_jar=None):
         return json.loads(archive.read("version.json"))
 
 
+def pack_versions(info):
+    """Return resource/data pack versions as ``(major, minor)`` pairs.
+
+    Minecraft 1.21.1 and older version metadata stores plain integer
+    ``resource``/``data`` values. Newer releases store major/minor fields.
+    Generators consume this normalized shape so a version pin does not need
+    release-specific branches.
+    """
+    pack = info["pack_version"]
+    if "resource_major" in pack:
+        return (
+            (pack["resource_major"], pack["resource_minor"]),
+            (pack["data_major"], pack["data_minor"]),
+        )
+    return ((pack["resource"], 0), (pack["data"], 0))
+
+
 def cargo_target():
     """Cargo's target directory, honouring CARGO_TARGET_DIR (tools/parity.py sets it)."""
     return ROOT / os.environ.get("CARGO_TARGET_DIR", "target")

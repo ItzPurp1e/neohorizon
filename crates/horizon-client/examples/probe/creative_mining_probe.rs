@@ -14,7 +14,7 @@ use std::{
 
 pub fn main() -> Result<()> {
     let args: Vec<_> = crate::args().collect();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client/26.3");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client/1.21.1");
     let defaults = horizon_world::item_defaults::read(&root)?;
     let items = Items::catalog(&root, &PackOverlay::NONE, &defaults)?;
     let mut out = BufWriter::new(File::create(&args[2])?);

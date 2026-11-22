@@ -18,7 +18,7 @@ fn resources() -> Option<&'static std::path::Path> {
     static ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
     ROOT.get_or_init(|| {
         let base =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client/26.3");
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.local/horizon-client/1.21.1");
         if !base.join("block-behaviours.json").exists() {
             return None;
         }

@@ -128,13 +128,13 @@ def jar_facts(client_jar):
     """The facts the game states about itself in the client jar's version.json."""
     with zipfile.ZipFile(client_jar) as archive:
         info = json.loads(archive.read("version.json"))
-    pack = info.get("pack_version", {})
+    resource_pack, data_pack = lab.pack_versions(info)
     return {
         "id": info["id"],
         "world_version": info["world_version"],
         "protocol_version": info["protocol_version"],
-        "resource_pack": f"{pack.get('resource_major')}.{pack.get('resource_minor')}",
-        "data_pack": f"{pack.get('data_major')}.{pack.get('data_minor')}",
+        "resource_pack": f"{resource_pack[0]}.{resource_pack[1]}",
+        "data_pack": f"{data_pack[0]}.{data_pack[1]}",
         "java_version": info["java_version"],
         "stable": info.get("stable"),
     }

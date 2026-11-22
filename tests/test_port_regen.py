@@ -21,6 +21,13 @@ def manifest(version, client, server, java=25):
             "javaVersion": {"majorVersion": java}}
 
 
+def legacy_manifest(version, client, server, java=21):
+    value = manifest(version, client, server, java)
+    value["downloads"].update({"client_mappings": {"sha1": "cm"},
+                               "server_mappings": {"sha1": "sm"}})
+    return value
+
+
 class UntrackedStatusTests(unittest.TestCase):
     def test_a_newly_generated_untracked_output_is_regenerated(self):
         # Hooks export repository/index/config variables; cwd alone does not isolate Git.
@@ -54,6 +61,11 @@ class PinTests(unittest.TestCase):
     def test_the_same_version_with_other_jars_is_repinned(self):
         self.assertEqual(regen.pinned_lock(LOCK, manifest("26.3", "c3b", "s3"), "m3b")["minecraft"]["client_sha1"],
                          "c3b")
+
+    def test_legacy_mapping_hashes_are_pinned(self):
+        pinned = regen.pinned_lock(LOCK, legacy_manifest("1.21.1", "c", "s"), "m")
+        self.assertEqual(pinned["minecraft"]["client_mappings_sha1"], "cm")
+        self.assertEqual(pinned["minecraft"]["server_mappings_sha1"], "sm")
 
 
 class CompileErrorTests(unittest.TestCase):

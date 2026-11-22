@@ -41,6 +41,8 @@ def main():
         "#![allow(missing_docs)]",
         "use crate::{Direction, State};",
         "",
+        f'pub const GENERATED_FOR_VERSION: &str = "{info["name"]}";',
+        "",
     ]
     tables = []
     for state in STATES:
