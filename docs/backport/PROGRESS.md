@@ -17,7 +17,6 @@
 - `cargo test --locked -p horizon-client --lib --bins --tests`: PASS; 1,955 library tests и 16 integration tests passed.
 - `cargo test --locked -p horizon-core -p horizon-world`: core 214 passed и дополнительный бинарь 9 passed; world 793 passed, 3 failed, 22 ignored. Точечный повтор воспроизвёл все три `PermissionDenied` stranded MCC failures.
 - `cargo test --locked -p horizon-protocol`: падает на `item::tests::deeply_nested_bundles_still_decode` с `STATUS_STACK_OVERFLOW`; повтор с `RUST_MIN_STACK=16777216` также падает.
-- `cargo test --locked -p horizon-client --lib --bins --tests`: 1,955 library и 16 integration tests passed.
 - `python3 -m unittest discover -s tests -v`: 2,459 tests; 53 failures, 16 errors, 175 skipped; exit 1.
 - `python3 tools/pr_ready.py`: 0 source files changed, все семь общих gates до Python passed; Python tests — 2,459 run, 53 failures, 15 errors, 175 skipped; exit 1.
 - Обновлённые документы Stage A находятся в `docs/backport/` и на ветке `backport/1.21.1-stage-a`, не в `main`.
