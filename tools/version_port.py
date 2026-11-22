@@ -210,9 +210,9 @@ def prepare_download(version, directory):
     if not (version_json.exists() and lab.digest(version_json, "sha1") == entry["sha1"]):
         version_json.write_bytes(fetch_json(entry["url"], entry["sha1"]))
     meta = json.loads(version_json.read_text())
-    if "client_mappings" in meta["downloads"] or "server_mappings" in meta["downloads"]:
+    legacy = "client_mappings" in meta["downloads"] or "server_mappings" in meta["downloads"]
+    if legacy:
         lab.download_mappings(meta, directory)
-        raise SystemExit(f"{version} mappings are verified and cached; JAR remapping is not yet available")
     jars = directory / "jars"
     found = {"version_json": version_json}
     for side in ["client", "server"]:
@@ -220,6 +220,8 @@ def prepare_download(version, directory):
         print(f"Fetching the {version} {side} jar ({download['size'] // 1_000_000} MB)", flush=True)
         found[side] = lab.download(download["url"], jars / f"{side}.jar", download["sha1"])
     found["server_game"] = unpack_game(found["server"], jars / "server-game.jar", version)
+    if legacy:
+        raise SystemExit(f"{version} client/server JARs and mappings are verified and cached; JAR remapping is not yet available")
     found["reports"] = directory / "datagen" / "reports"
     if not found["reports"].exists():
         print(f"Running the {version} data generator", flush=True)
