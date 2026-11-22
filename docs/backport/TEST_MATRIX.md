@@ -9,7 +9,9 @@ Baseline source SHA: `aaa14aa26e4597ee8f18715552c5fe5d6078ac21`. Host: Windows 1
 | A-03 | `cargo test --locked -p horizon-core -p horizon-world` | Core: 214 passed, 0 failed, 8 ignored; дополнительный бинарь: 9 passed. World: 793 passed, 3 failed, 22 ignored. Три `PermissionDenied` (Windows error 5) в stranded MCC upgrade tests. Изолированный повтор трёх тестов воспроизводит все 3; два соседних MCC сценария проходят. | FAIL (Windows file operation) |
 | A-04 | `cargo test --locked -p horizon-client --lib --bins --tests` | 1,955 library tests и 16 integration tests passed; 0 failures. | PASS |
 | A-05 | `python3 -m unittest discover -s tests -v` | Exit 1; 2,459 run in 1,224.263s; 53 failures, 16 errors, 175 skipped. Отдельный повтор внутри `pr_ready` сообщил 53 failures, 15 errors, 175 skipped (25m25s). Разница в один error показывает нестабильность одного из тестов. | FAIL (Windows host baseline) |
-| B-01 | Remap determinism | Не запускалось. | NOT STARTED |
+| B-01 | `tools/version_port.py prepare 1.21.1 -j 4`, затем повтор той же команды | Официальные mappings/JAR прошли checksum verification; ART 2.0.18 remapped client/server с `--reverse --strip-sigs`; vanilla datagen создал 5 reports; 8,269 классов и 67,713 методов проиндексированы. Два настоящих legacy exporters скомпилированы/запущены. Повтор совпал с кэшем: client JAR SHA-256 `8446d377…a503`, server JAR `d81946eb…b9d5`, gameplay exporter `7e013ec2…5010`, entity exporter `bed842d5…c9d2`. | PASS |
+| B-02 | `python3 -m unittest discover -s tests -p test_lab.py` с pinned ART/JRE 21 | 28 passed; реальный fixture дважды remapped obfuscated class `a` в `demo/Named`, результаты byte-identical. | PASS |
+| B-03 | `cargo test --locked --offline -p horizon-prepare` | Library: 56 passed, 14 ignored daily; CLI: 2 passed; 0 failed. | PASS |
 | C-01 | Generated version constants | Не запускалось. | NOT STARTED |
 | E–J | Interop, assets, save roundtrip, gameplay, native mod, release gates | Не запускалось; эти проверки относятся к последующим этапам. | NOT STARTED |
 

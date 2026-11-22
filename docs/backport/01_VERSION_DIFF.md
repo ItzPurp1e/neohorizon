@@ -28,7 +28,7 @@
 | Область | Требуемое сравнение и действие | Статус |
 |---|---|---|
 | Версия/генерация | Constants, packet IDs, entity tracking, command tables, datapack/resource layout | NOT STARTED |
-| Подготовка JAR | 1.21.1 использует obfuscated JAR + mappings; проверить hashing/remap pipeline | BLOCKED: точный baseline не снят |
+| Подготовка JAR | 1.21.1 использует obfuscated JAR + mappings; проверить hashing/remap pipeline | VERIFIED: Stage B, ART 2.0.18, повторяемые client/server outputs и успешный vanilla datagen |
 | Protocol | login/config/play, IDs, packet layouts, registries, chunk/light/entity/inventory | NOT STARTED |
 | Data | block states, items/components, entities, biomes, tags, recipes, loot | NOT STARTED |
 | Assets | legacy item models/overrides, blockstates, atlases, fonts, audio, GUI | NOT STARTED |

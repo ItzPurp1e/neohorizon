@@ -7,7 +7,7 @@
 - Этап A: **COMPLETE**; точный source commit, Windows toolchain и результаты всех пяти обязательных baseline-команд зафиксированы в `TEST_MATRIX.md`.
 - Baseline выявил исходные тестовые сбои: protocol stack overflow, три Windows MCC `PermissionDenied`, Python suite failures; клиентский пакет проходит.
 - `tools/pr_ready.py`: подготовительные gates проходят; итог команды exit 1 из-за Python suite, результаты записаны.
-- Этап B: **IN PROGRESS**; в Python и Rust import path добавлена проверка `client_mappings_sha1`/`server_mappings_sha1` относительно manifest. `lab.py` и `version_port.py` проверяют и сохраняют обе mappings и исходные client/server JAR. `horizon-prepare` принимает `--client-mappings`/`--server-mappings` и сохраняет проверенные копии. JAR remapper ещё не подключён.
+- Этап B: **COMPLETE**; единый pinned AutoRenamingTool 2.0.18 подключён к `horizon-prepare`, `lab.py` и `version_port.py`. Официальные mappings, исходные JAR и remapped outputs проверяются по SHA, подписи исходных JAR удаляются штатным `--strip-sigs`, а повторный remap обязан дать тот же SHA-256.
 - Этапы C–J: **NOT STARTED**.
 
 ## Выполнено
@@ -21,8 +21,12 @@
 - `python3 -m unittest discover -s tests -v`: 2,459 tests; 53 failures, 16 errors, 175 skipped; exit 1.
 - `python3 tools/pr_ready.py`: 0 source files changed, все семь общих gates до Python passed; Python tests — 2,459 run, 53 failures, 15 errors, 175 skipped; exit 1.
 - Обновлённые документы Stage A находятся в `docs/backport/` и на ветке `backport/1.21.1-stage-a`, не в `main`.
+- Реальный pipeline 1.21.1 скачал и проверил официальный manifest, обе mappings, client/server JAR и 62 client libraries, remapped client/server, успешно запустил vanilla datagen и создал `blocks.json`, `commands.json`, `items.json`, `packets.json`, `registries.json`.
+- На named server JAR реально скомпилированы и дважды запущены содержательные vanilla exporters: `VanillaGameplayFactsExporter` и `VanillaEntityTypesExporter`. Повторные SHA-256 совпали: `7e013ec2…5010` и `bed842d5…c9d2`.
+- Повторный полный remap дал те же SHA-256: client `8446d3777e7a524b425e9b22a2e3fd3878dd2ef61cff62f1ef8817da8632a503`, server `d81946eb2b6f01f93ecba298ac54b0ac8bcf21dfa61601a94d0d39005e36b9d5`.
+- Проверки Stage B: 28/28 `test_lab.py`, 56/56 активных unit tests `horizon-prepare` и 2/2 CLI tests прошли; 14 заранее помеченных daily Rust tests не запускались.
 
 ## Следующий шаг
 
-Подключить один проверяемый remapper для client/server JAR к `horizon-prepare`, `lab.py` и `version_port.py`; сохранить output SHA в `.local`, проверить повторяемость. Исходные baseline failures остаются в `KNOWN_GAPS.md`.
+Начать этап C: закрепить Minecraft 1.21.1 и Java 21 в version lock, затем регенерировать version-dependent constants/tables поверх уже проверенного Stage B pipeline. Исходные baseline failures остаются в `KNOWN_GAPS.md`.
 

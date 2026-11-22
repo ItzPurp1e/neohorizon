@@ -11,7 +11,8 @@
 
 ## Технические gaps бэкпорта (предварительные)
 
-- **OPEN — old JAR remap:** `horizon-prepare`/tools должны поддержать 1.21.1 obfuscated client/server вместе с hash-проверкой mappings и outputs.
+- **CLOSED in Stage B — old JAR remap:** `horizon-prepare`, `lab.py` и `version_port.py` используют один pinned ART pipeline; mappings, исходные JAR и outputs проверяются, реальный 1.21.1 datagen и повторяемость подтверждены.
+- **OPEN for later data/render stages — full exporter API port:** Stage B подтверждает named JAR двумя реальными registry/gameplay exporters. Остальные exporter-исходники всё ещё используют API 26.3 (model/tag/heightmap/level interfaces) и должны получить 1.21.1 реализации при переносе соответствующих data/render подсистем; это не блокирует remap/import pipeline.
 - **OPEN — protocol adapter completeness:** source comments указывают на legacy recipe book, explosion layout, cursor/inventory packets, entity position sync и serializer IDs. Проверить также relative teleport/velocity, vehicle/player input и направления mappings по полным packet tables и oracle.
 - **OPEN — runtime generation:** 26.3 constants/data tables ещё не переключены на 1.21.1.
 - **OPEN — registries/data:** полный versioned diff и генерация 1.21.1 не проведены.
