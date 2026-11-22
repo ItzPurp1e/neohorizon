@@ -4,9 +4,9 @@
 
 ## Текущий статус
 
-- Этап A: **PARTIAL**; аудит зафиксирован на source commit `aaa14aa26e4597ee8f18715552c5fe5d6078ac21`, точный checkout и переносимое окружение подготовлены.
-- Rust baseline: клиентские тесты прошли; protocol и world имеют выявленные падения, см. `TEST_MATRIX.md`.
-- Python suite и `tools/pr_ready.py`: предварительные `pr_ready` gates прошли, но полный Python suite не завершился за ~12 минут и был прерван; итогового unittest summary нет.
+- Этап A: **COMPLETE**; точный source commit, Windows toolchain и результаты всех пяти обязательных baseline-команд зафиксированы в `TEST_MATRIX.md`.
+- Baseline выявил исходные тестовые сбои: protocol stack overflow, три Windows MCC `PermissionDenied`, Python suite failures; клиентский пакет проходит.
+- `tools/pr_ready.py`: подготовительные gates проходят; итог команды exit 1 из-за Python suite, результаты записаны.
 - Этапы B–J: **NOT STARTED**.
 
 ## Выполнено
@@ -15,12 +15,14 @@
 - Подготовлены локальные Python 3.12.10, Rust 1.99.1 (CI pin), Rust 1.95.0, MinGit, MSVC и SDK компоненты. Системная конфигурация не менялась.
 - Зафиксированы Windows 11 build `10.0.26300.0`, PowerShell 5.1, Cargo workspace из 73 members; edition 2024 и минимальный Rust 1.95.
 - `cargo test --locked -p horizon-client --lib --bins --tests`: PASS; 1,955 library tests и 16 integration tests passed.
-- `cargo test --locked -p horizon-core -p horizon-world`: core 214 passed и дополнительный бинарь 9 passed; world 793 passed, 3 failed, 22 ignored. Все три ошибки `PermissionDenied` в stranded MCC upgrade tests на Windows.
-- `cargo test --locked -p horizon-protocol`: процесс падает с Windows `STATUS_STACK_OVERFLOW` при запуске тестов; точный тест и окружение нужно исследовать отдельно.
-- Запущен `python3 tools/pr_ready.py`: public tree, repository hygiene, layers, addresses, export lists и test stand-ins прошли; Python tests не завершились за ~12 минут и были прерваны.
+- `cargo test --locked -p horizon-core -p horizon-world`: core 214 passed и дополнительный бинарь 9 passed; world 793 passed, 3 failed, 22 ignored. Точечный повтор воспроизвёл все три `PermissionDenied` stranded MCC failures.
+- `cargo test --locked -p horizon-protocol`: падает на `item::tests::deeply_nested_bundles_still_decode` с `STATUS_STACK_OVERFLOW`; повтор с `RUST_MIN_STACK=16777216` также падает.
+- `cargo test --locked -p horizon-client --lib --bins --tests`: 1,955 library и 16 integration tests passed.
+- `python3 -m unittest discover -s tests -v`: 2,459 tests; 53 failures, 16 errors, 175 skipped; exit 1.
+- `python3 tools/pr_ready.py`: 0 source files changed, все семь общих gates до Python passed; Python tests — 2,459 run, 53 failures, 15 errors, 175 skipped; exit 1.
 - Обновлённые документы Stage A находятся в `docs/backport/` и на ветке `backport/1.21.1-stage-a`, не в `main`.
 
 ## Следующий шаг
 
-Получить итог `pr_ready.py`/Python suite, сохранить фактические логи и exit codes, затем отделить подтверждённые исходные ошибки от ограничений Windows/окружения. После этого завершить аудит Stage A перед началом изменений для 1.21.1.
+Начать этап B после review baseline gaps: исправить/обойти глубоко вложенное bundle decoding; подтвердить MCC upgrade на Linux и Windows; классифицировать Python test failures, часть которых использует POSIX shell/пути, и устранить реальные product regressions отдельно от host-specific harness failures.
 
