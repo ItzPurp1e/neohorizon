@@ -9,8 +9,9 @@
 - Репозиторий: `ItzPurp1e/neohorizon` (публичный; GitHub-доступ подтверждён).
 - Default branch: `main`.
 - Базовый commit для аудита: `aaa14aa26e4597ee8f18715552c5fe5d6078ac21`.
-- Целевая версия: Minecraft 1.21.1, protocol 767, DataVersion 3955, Java 21.
-- Исходная версия по аудиту плана: Minecraft 26.3, protocol 777, DataVersion 5023, Java 25.
+- Ветка документации Stage A: `backport/1.21.1-stage-a`, создана от базового commit; шесть audit-файлов сохранены в ней отдельными commit, последний: `26ee87a564df95ee029b5c2f9d57e80e8ca6145f`.
+- Целевая версия: Minecraft 1.21.1, protocol 767, DataVersion 3955, resource pack 34, data pack 48, Java 21.
+- Исходная версия подтверждена по `crates/horizon-core/src/version.rs`: Minecraft 26.3, protocol 777, DataVersion 5023, Java 25.
 - Текущая локальная папка: `D:\Projects\NeoHorizon`; в ней на момент старта имеется план бэкпорта, но нет `.git`, `Cargo.toml` и исходников.
 - ОС: Windows (PowerShell; путь workspace Windows).
 - Доступные локальные инструменты: Python launcher (`python.exe`, `python3.exe`). Не найдены `git`, `cargo`, `rustc`, `java`, `javac` в PATH и типовых установочных путях.
@@ -22,7 +23,7 @@
 
 Основные слои: `horizon-core` (версии/RNG/математика), `horizon-protocol` (кодеки, framing, состояния соединения и пакеты), `horizon-world` (NBT, chunks, saves, DataFixer, worldgen), `horizon-client` (клиент и integrated server), gameplay/client-gameplay, render/assets, items/commands/client-core, `horizon-prepare`, Horizon-native mod crates, `cargo-horizon-mod`, а также `tools/` и Java oracle/probe fixtures.
 
-Выявлены адаптерные компоненты 1.21.1↔26.3:
+Выявлены адаптерные компоненты 1.21.1↔26.3. По комментариям исходников это адаптация 1.21.1 packet layouts к закреплённому 26.3 runtime; это не самостоятельная runtime-версия 1.21.1:
 
 - `crates/horizon-protocol/src/adapter/v1_21_1.rs`
 - `crates/horizon-protocol/src/adapter/v1_21_1_ids.rs`
@@ -30,7 +31,9 @@
 - `crates/horizon-protocol/src/adapter/client_session/step_1_21_1.rs`
 - `crates/horizon-protocol/src/item/v1_21_1.rs`
 
-По предварительной проверке адаптер содержит незакрытые случаи recipe book, explosion, inventory/entity sync и relative movement. Это предварительные findings, их необходимо подтвердить на checkout указанного commit и привязать к точным строкам.
+Подтверждённые gaps из комментариев в `step_1_21_1.rs`: serverbound packets, изменённые в 1.21.2, не все реализованы; explosion packet layout несовместим; recipe book rework/legacy recipe packet не обработан; cursor/player inventory updates могут теряться; `entity_position_sync` отбрасывается вместо перенаправления на teleport; relative teleport semantics теряются; entity-data serializer/ID tables требуют проверки. `tools/lab.py` (строки 577–578) отказывает, если manifest содержит client/server mappings; `tools/version_port.py` (строки 213–214) отдельно отказывает для obfuscated версии. `research-lock.json` закреплён на 26.3.
+
+Проверка выполнена чтением файлов на GitHub ref исходного SHA. Локальной построчной сверки нет; findings подтверждают наличие задач, но не доказывают полный список protocol gaps.
 
 ## Baseline
 
